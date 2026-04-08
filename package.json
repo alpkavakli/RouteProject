@@ -1,0 +1,21 @@
+{
+  "name": "predictive-transit",
+  "version": "1.0.0",
+  "description": "PREDICTIVE TRANSIT — Real bus arrival predictions & crowd estimation",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.1",
+    "express": "^5.2.1",
+    "ml-cart": "^2.1.1",
+    "ml-random-forest": "^2.1.0"
+  }
+}

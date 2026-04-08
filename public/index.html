@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="PREDICTIVE TRANSIT — Real-time bus arrival predictions and crowd estimation for Istanbul and Ankara. Know when your bus will actually arrive.">
+  <title>PREDICTIVE TRANSIT — Real Arrival Times</title>
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- App Styles -->
+  <link rel="stylesheet" href="/css/variables.css">
+  <link rel="stylesheet" href="/css/base.css">
+  <link rel="stylesheet" href="/css/components.css">
+
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='80' font-size='80'>🚌</text></svg>">
+</head>
+<body>
+  <div class="app" id="app">
+    <!-- ─── Header ───────────────────────────────────────────────── -->
+    <header class="header">
+      <div class="header__brand">
+        <div class="header__logo">🚌</div>
+        <div>
+          <div class="header__title">PREDICTIVE TRANSIT</div>
+          <div class="header__subtitle">Real arrival times • Live crowd estimation</div>
+        </div>
+      </div>
+
+      <div class="header__right">
+        <div class="live-indicator">
+          <span class="live-dot"></span>
+          LIVE
+        </div>
+
+        <div class="city-toggle" id="cityToggle">
+          <button class="city-toggle__btn active" data-city="Istanbul">Istanbul</button>
+          <button class="city-toggle__btn" data-city="Ankara">Ankara</button>
+        </div>
+
+        <div class="weather" id="weatherWidget">
+          <span class="weather__icon" id="weatherIcon">☀️</span>
+          <span class="weather__temp" id="weatherTemp">--°</span>
+          <div class="weather__divider"></div>
+          <div class="weather__extra">
+            <span id="weatherWind">💨 -- km/h</span>
+            <span id="weatherHumidity">💧 --%</span>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- ─── Map ──────────────────────────────────────────────────── -->
+    <main class="map-container">
+      <!-- Search overlay -->
+      <div class="map-search">
+        <div class="map-search__input-wrap">
+          <span class="map-search__icon">🔍</span>
+          <input
+            type="text"
+            class="map-search__input"
+            id="searchInput"
+            placeholder="Search for a bus stop..."
+            autocomplete="off"
+          >
+        </div>
+        <div class="map-search__results" id="searchResults"></div>
+      </div>
+
+      <div id="map"></div>
+    </main>
+
+    <!-- ─── Side Panel ───────────────────────────────────────────── -->
+    <aside class="panel" id="panel">
+      <!-- Empty state -->
+      <div class="panel__empty" id="panelEmpty">
+        <div class="panel__empty-icon">📍</div>
+        <div class="panel__empty-title">Select a Bus Stop</div>
+        <div class="panel__empty-desc">
+          Click on any bus stop on the map or use the search bar to view real-time arrival predictions and crowd estimates.
+        </div>
+      </div>
+
+      <!-- Filled state (hidden by default) -->
+      <div id="panelContent" style="display:none; flex-direction:column; height:100%;">
+        <div class="panel__header">
+          <div class="panel__stop-name">
+            <span class="pin-icon">📍</span>
+            <span id="panelStopName">--</span>
+          </div>
+          <div class="panel__stop-city" id="panelStopCity">--</div>
+          <div class="panel__routes" id="panelRoutes"></div>
+        </div>
+
+        <div class="panel__body" id="panelBody">
+          <!-- Crowd Section -->
+          <div class="section-header">
+            <span class="section-title">👥 Stop Crowd</span>
+            <span class="section-badge" id="crowdUpdatedAgo">Updated just now</span>
+          </div>
+          <div id="crowdCard"></div>
+
+          <!-- Arrivals Section -->
+          <div class="section-header">
+            <span class="section-title">🚍 Upcoming Arrivals</span>
+            <span class="section-badge" id="arrivalCount">--</span>
+          </div>
+          <div id="arrivalCards"></div>
+        </div>
+
+        <div class="model-info" id="modelInfo">
+          <div class="model-info__badge">🧠 ML Engine Loading...</div>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- App Scripts -->
+  <script src="/js/data.js"></script>
+  <script src="/js/map.js"></script>
+  <script src="/js/ui.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>
