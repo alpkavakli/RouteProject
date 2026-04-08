@@ -1,0 +1,176 @@
+{
+  "info": {
+    "name": "Predictive Transit API",
+    "description": "API collection for Predictive Transit — ML-powered bus arrival prediction and stop crowd estimation for Istanbul and Ankara.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000"
+    }
+  ],
+  "item": [
+    {
+      "name": "Stops",
+      "item": [
+        {
+          "name": "Get All Stops",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/stops",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "stops"]
+            },
+            "description": "Returns all bus stops across Istanbul and Ankara."
+          }
+        },
+        {
+          "name": "Get Stops by City",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/stops?city=Istanbul",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "stops"],
+              "query": [
+                { "key": "city", "value": "Istanbul" }
+              ]
+            },
+            "description": "Filter stops by city name (Istanbul or Ankara)."
+          }
+        },
+        {
+          "name": "Get Stop by ID",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/stops/ist-1",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "stops", "ist-1"]
+            },
+            "description": "Get details for a specific stop. Example: ist-1 (Taksim Meydani)."
+          }
+        }
+      ]
+    },
+    {
+      "name": "ML Predictions",
+      "item": [
+        {
+          "name": "Predict Arrivals for Stop",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/stops/ist-1/arrivals",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "stops", "ist-1", "arrivals"]
+            },
+            "description": "ML-predicted bus arrivals for a stop. Returns predicted delay, confidence score, occupancy level, and interpretable delay factors per route. Powered by a Random Forest Regressor trained on 3000 synthetic samples."
+          }
+        },
+        {
+          "name": "Predict Crowd for Stop",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/stops/ist-1/crowd",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "stops", "ist-1", "crowd"]
+            },
+            "description": "ML-predicted crowd level (low/medium/high) for a stop. Returns estimated passenger count, class probabilities, confidence, trend, and human-readable reason. Powered by a Random Forest Classifier trained on 2000 synthetic samples."
+          }
+        },
+        {
+          "name": "Predict Arrivals (Ankara)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/stops/ank-1/arrivals",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "stops", "ank-1", "arrivals"]
+            },
+            "description": "Arrival predictions for Ankara Kizilay stop."
+          }
+        },
+        {
+          "name": "Predict Crowd (Ankara)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/stops/ank-1/crowd",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "stops", "ank-1", "crowd"]
+            },
+            "description": "Crowd prediction for Ankara Kizilay stop."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Routes",
+      "item": [
+        {
+          "name": "Get All Routes",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/routes",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "routes"]
+            },
+            "description": "Returns all bus routes with stop mappings."
+          }
+        },
+        {
+          "name": "Get Routes by City",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/routes?city=Ankara",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "routes"],
+              "query": [
+                { "key": "city", "value": "Ankara" }
+              ]
+            },
+            "description": "Filter routes by city."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Weather & Model",
+      "item": [
+        {
+          "name": "Get Weather",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/weather?city=Istanbul",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "weather"],
+              "query": [
+                { "key": "city", "value": "Istanbul" }
+              ]
+            },
+            "description": "Current weather conditions. Weather data feeds into ML models as features (temperature, precipitation, wind speed affect predictions)."
+          }
+        },
+        {
+          "name": "Get ML Model Info",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/model/info",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "model", "info"]
+            },
+            "description": "Returns ML model metadata: training metrics (MAE, accuracy), feature lists, sample counts, and current weather state used for predictions."
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -532,7 +532,6 @@
   margin-bottom: var(--sp-sm);
   border: 1px solid var(--border-subtle);
   transition: all var(--transition-base);
-  cursor: pointer;
   position: relative;
   overflow: hidden;
 }
@@ -549,9 +548,6 @@
 
 .arrival-card:hover {
   border-color: var(--border-light);
-  background: var(--bg-card-hover);
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-md);
 }
 
 .arrival-card__top {
