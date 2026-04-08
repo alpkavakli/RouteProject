@@ -1,8 +1,14 @@
 // ─── Arrival Time Prediction Model ──────────────────────────────────────
 // Random Forest Regressor for predicting bus delay (minutes)
 
+const fs = require('fs');
+const path = require('path');
 const { RandomForestRegression } = require('ml-random-forest');
 const { generateArrivalDataset } = require('./data-generator');
+
+const CACHE_DIR = path.join(__dirname, 'cache');
+const MODEL_PATH = path.join(CACHE_DIR, 'arrival-model.json');
+const METRICS_PATH = path.join(CACHE_DIR, 'arrival-metrics.json');
 
 const FEATURE_NAMES = [
   'hour', 'dayOfWeek', 'isRushHour', 'temperature', 'precipitation',
@@ -14,17 +20,46 @@ let model = null;
 let trainMetrics = null;
 
 /**
- * Train the arrival prediction model
+ * Try to load cached model, otherwise train from scratch
  */
 function train() {
+  if (loadFromCache()) return;
+  trainFresh();
+  saveToCache();
+}
+
+function loadFromCache() {
+  try {
+    if (!fs.existsSync(MODEL_PATH) || !fs.existsSync(METRICS_PATH)) return false;
+    const modelJson = JSON.parse(fs.readFileSync(MODEL_PATH, 'utf8'));
+    const metricsJson = JSON.parse(fs.readFileSync(METRICS_PATH, 'utf8'));
+    model = RandomForestRegression.load(modelJson);
+    trainMetrics = metricsJson;
+    console.log(`   ✅ Arrival model loaded from cache — MAE: ${trainMetrics.mae} min`);
+    return true;
+  } catch (err) {
+    console.log(`   ⚠️ Cache load failed: ${err.message}, retraining...`);
+    return false;
+  }
+}
+
+function saveToCache() {
+  try {
+    if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR, { recursive: true });
+    fs.writeFileSync(MODEL_PATH, JSON.stringify(model.toJSON()));
+    fs.writeFileSync(METRICS_PATH, JSON.stringify(trainMetrics));
+  } catch (err) {
+    console.log(`   ⚠️ Cache save failed: ${err.message}`);
+  }
+}
+
+function trainFresh() {
   console.log('   Training arrival prediction model...');
   const start = Date.now();
 
-  // Generate training data
   const { X: trainX, y: trainY } = generateArrivalDataset(3000);
   const { X: testX, y: testY } = generateArrivalDataset(500);
 
-  // Train Random Forest
   model = new RandomForestRegression({
     nEstimators: 50,
     maxFeatures: 0.7,
@@ -35,7 +70,6 @@ function train() {
 
   model.train(trainX, trainY);
 
-  // Evaluate on test set
   const predictions = model.predict(testX);
   let totalError = 0;
   let within1 = 0;

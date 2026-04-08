@@ -1,73 +1,354 @@
+require('dotenv').config();
+
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const predictor = require('./ml/predictor');
+const { initDatabase } = require('./db/init');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+let pool; // set after DB init
 
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ─── Data ───────────────────────────────────────────────────────────────────
+// ─── Helper: query stops with their route IDs ─────────────────────────────
 
-const stops = [
-  // Istanbul stops
-  { id: 'ist-1', city: 'Istanbul', name: 'Taksim Meydanı', lat: 41.0370, lng: 28.9850, routes: ['T1','12','66T'] },
-  { id: 'ist-2', city: 'Istanbul', name: 'Beşiktaş İskele', lat: 41.0432, lng: 29.0054, routes: ['DT1','22','559C'] },
-  { id: 'ist-3', city: 'Istanbul', name: 'Eminönü', lat: 41.0176, lng: 28.9714, routes: ['T1','99','47'] },
-  { id: 'ist-4', city: 'Istanbul', name: 'Kadıköy İskele', lat: 40.9906, lng: 29.0237, routes: ['14','17L','KM12'] },
-  { id: 'ist-5', city: 'Istanbul', name: 'Üsküdar Meydanı', lat: 41.0253, lng: 29.0155, routes: ['15F','12','KM12'] },
-  { id: 'ist-6', city: 'Istanbul', name: 'Levent Metro', lat: 41.0793, lng: 29.0113, routes: ['DT1','59R','29C'] },
-  { id: 'ist-7', city: 'Istanbul', name: 'Sultanahmet', lat: 41.0054, lng: 28.9768, routes: ['T1','BN1','47'] },
-  { id: 'ist-8', city: 'Istanbul', name: 'Mecidiyeköy', lat: 41.0676, lng: 28.9933, routes: ['DT1','66T','59R'] },
-  // Ankara stops
-  { id: 'ank-1', city: 'Ankara', name: 'Kızılay Meydanı', lat: 39.9208, lng: 32.8541, routes: ['M1','124','401'] },
-  { id: 'ank-2', city: 'Ankara', name: 'Ulus Meydanı', lat: 39.9414, lng: 32.8563, routes: ['M1','354','112'] },
-  { id: 'ank-3', city: 'Ankara', name: 'Çankaya', lat: 39.9032, lng: 32.8600, routes: ['124','442','EGO3'] },
-  { id: 'ank-4', city: 'Ankara', name: 'Dikmen Vadisi', lat: 39.8920, lng: 32.8430, routes: ['401','442','124'] },
-  { id: 'ank-5', city: 'Ankara', name: 'AŞTİ Terminal', lat: 39.9110, lng: 32.8100, routes: ['M1','354','EGO3'] },
-  { id: 'ank-6', city: 'Ankara', name: 'Batıkent Metro', lat: 39.9700, lng: 32.7310, routes: ['M1','112','689'] },
-  { id: 'ank-7', city: 'Ankara', name: 'Tunalı Hilmi Cad.', lat: 39.9130, lng: 32.8620, routes: ['124','401','442'] },
-];
+async function queryStops(filter) {
+  let query = `
+    SELECT s.id, s.name, s.lat, s.lng, s.popularity, s.avg_delay,
+           c.name AS city,
+           GROUP_CONCAT(rs.route_id ORDER BY rs.stop_order) AS route_ids
+    FROM stops s
+    JOIN cities c ON s.city_id = c.id
+    LEFT JOIN route_stops rs ON s.id = rs.stop_id
+  `;
+  const params = [];
 
-const routes = [
-  // Istanbul routes
-  { id: 'T1',   city: 'Istanbul', name: 'T1 Kabataş–Bağcılar',      color: '#ef4444', stops: ['ist-7','ist-3','ist-1'] },
-  { id: '12',   city: 'Istanbul', name: '12 Taksim–Üsküdar',         color: '#3b82f6', stops: ['ist-1','ist-5'] },
-  { id: '66T',  city: 'Istanbul', name: '66T Taksim–Mecidiyeköy',    color: '#f59e0b', stops: ['ist-1','ist-8'] },
-  { id: 'DT1',  city: 'Istanbul', name: 'DT1 Beşiktaş–Levent',      color: '#8b5cf6', stops: ['ist-2','ist-8','ist-6'] },
-  { id: '22',   city: 'Istanbul', name: '22 Beşiktaş–Kabataş',       color: '#10b981', stops: ['ist-2'] },
-  { id: '559C', city: 'Istanbul', name: '559C Beşiktaş–Sarıyer',     color: '#ec4899', stops: ['ist-2'] },
-  { id: '99',   city: 'Istanbul', name: '99 Eminönü Ring',            color: '#06b6d4', stops: ['ist-3'] },
-  { id: '47',   city: 'Istanbul', name: '47 Eminönü–Sultanahmet',     color: '#84cc16', stops: ['ist-3','ist-7'] },
-  { id: '14',   city: 'Istanbul', name: '14 Kadıköy–Bostancı',       color: '#f97316', stops: ['ist-4'] },
-  { id: '17L',  city: 'Istanbul', name: '17L Kadıköy–Tuzla',         color: '#64748b', stops: ['ist-4'] },
-  { id: 'KM12', city: 'Istanbul', name: 'KM12 Kadıköy–Üsküdar',     color: '#a855f7', stops: ['ist-4','ist-5'] },
-  { id: '15F',  city: 'Istanbul', name: '15F Üsküdar–Beykoz',        color: '#14b8a6', stops: ['ist-5'] },
-  { id: '59R',  city: 'Istanbul', name: '59R Mecidiyeköy–Levent',    color: '#e11d48', stops: ['ist-8','ist-6'] },
-  { id: '29C',  city: 'Istanbul', name: '29C Levent–Hacıosman',      color: '#78716c', stops: ['ist-6'] },
-  { id: 'BN1',  city: 'Istanbul', name: 'BN1 Sultanahmet–Eyüp',      color: '#d946ef', stops: ['ist-7'] },
-  // Ankara routes
-  { id: 'M1',   city: 'Ankara', name: 'M1 Kızılay–Batıkent',         color: '#ef4444', stops: ['ank-1','ank-2','ank-5','ank-6'] },
-  { id: '124',  city: 'Ankara', name: '124 Kızılay–Çankaya–Tunalı',   color: '#3b82f6', stops: ['ank-1','ank-3','ank-7','ank-4'] },
-  { id: '401',  city: 'Ankara', name: '401 Kızılay–Dikmen',           color: '#f59e0b', stops: ['ank-1','ank-4','ank-7'] },
-  { id: '354',  city: 'Ankara', name: '354 Ulus–AŞTİ',                color: '#8b5cf6', stops: ['ank-2','ank-5'] },
-  { id: '112',  city: 'Ankara', name: '112 Ulus–Batıkent',            color: '#10b981', stops: ['ank-2','ank-6'] },
-  { id: '442',  city: 'Ankara', name: '442 Çankaya–Dikmen–Tunalı',    color: '#ec4899', stops: ['ank-3','ank-4','ank-7'] },
-  { id: 'EGO3', city: 'Ankara', name: 'EGO3 Çankaya–AŞTİ',           color: '#06b6d4', stops: ['ank-3','ank-5'] },
-  { id: '689',  city: 'Ankara', name: '689 Batıkent Express',         color: '#f97316', stops: ['ank-6'] },
-];
+  if (filter.city) {
+    query += ' WHERE LOWER(c.name) = LOWER(?)';
+    params.push(filter.city);
+  } else if (filter.id) {
+    query += ' WHERE s.id = ?';
+    params.push(filter.id);
+  }
 
-// Current weather state (updated by weather endpoint, consumed by ML)
-let currentWeatherCache = {};
+  query += ' GROUP BY s.id, s.name, s.lat, s.lng, s.popularity, s.avg_delay, c.name';
+
+  const [rows] = await pool.execute(query, params);
+  return rows.map(r => ({
+    id: r.id,
+    city: r.city,
+    name: r.name,
+    lat: r.lat,
+    lng: r.lng,
+    popularity: r.popularity,
+    avg_delay: r.avg_delay,
+    routes: r.route_ids ? r.route_ids.split(',') : [],
+  }));
+}
+
+async function queryRoutes(filter) {
+  let query = `
+    SELECT r.id, r.name, r.color, c.name AS city,
+           GROUP_CONCAT(rs.stop_id ORDER BY rs.stop_order) AS stop_ids
+    FROM routes r
+    JOIN cities c ON r.city_id = c.id
+    LEFT JOIN route_stops rs ON r.id = rs.route_id
+  `;
+  const params = [];
+
+  if (filter.city) {
+    query += ' WHERE LOWER(c.name) = LOWER(?)';
+    params.push(filter.city);
+  } else if (filter.id) {
+    query += ' WHERE r.id = ?';
+    params.push(filter.id);
+  }
+
+  query += ' GROUP BY r.id, r.name, r.color, c.name';
+
+  const [rows] = await pool.execute(query, params);
+  return rows.map(r => ({
+    id: r.id,
+    city: r.city,
+    name: r.name,
+    color: r.color,
+    stops: r.stop_ids ? r.stop_ids.split(',') : [],
+  }));
+}
 
 function randomBetween(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-function generateWeather(city) {
+// ─── Cities ────────────────────────────────────────────────────────────────
+
+app.get('/api/cities', async (req, res) => {
+  try {
+    const [cities] = await pool.execute('SELECT * FROM cities ORDER BY name');
+    res.json(cities);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/cities', async (req, res) => {
+  try {
+    const { name, lat, lng, zoom } = req.body;
+    if (!name || lat == null || lng == null) {
+      return res.status(400).json({ error: 'name, lat, and lng are required' });
+    }
+    const [result] = await pool.execute(
+      'INSERT INTO cities (name, lat, lng, zoom) VALUES (?, ?, ?, ?)',
+      [name, lat, lng, zoom || 13]
+    );
+    res.status(201).json({ id: result.insertId, name, lat, lng, zoom: zoom || 13 });
+  } catch (err) {
+    if (err.code === 'ER_DUP_ENTRY') {
+      return res.status(409).json({ error: 'City already exists' });
+    }
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/cities/:id', async (req, res) => {
+  try {
+    const { name, lat, lng, zoom } = req.body;
+    const [result] = await pool.execute(
+      'UPDATE cities SET name = COALESCE(?, name), lat = COALESCE(?, lat), lng = COALESCE(?, lng), zoom = COALESCE(?, zoom) WHERE id = ?',
+      [name, lat, lng, zoom, req.params.id]
+    );
+    if (result.affectedRows === 0) return res.status(404).json({ error: 'City not found' });
+    res.json({ message: 'City updated' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/cities/:id', async (req, res) => {
+  try {
+    const [result] = await pool.execute('DELETE FROM cities WHERE id = ?', [req.params.id]);
+    if (result.affectedRows === 0) return res.status(404).json({ error: 'City not found' });
+    res.json({ message: 'City deleted' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Stops ─────────────────────────────────────────────────────────────────
+
+app.get('/api/stops', async (req, res) => {
+  try {
+    const stops = await queryStops({ city: req.query.city });
+    res.json(stops);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/stops/:id', async (req, res) => {
+  try {
+    const stops = await queryStops({ id: req.params.id });
+    if (stops.length === 0) return res.status(404).json({ error: 'Stop not found' });
+    res.json(stops[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/stops', async (req, res) => {
+  try {
+    const { id, city, name, lat, lng, popularity, avg_delay } = req.body;
+    if (!id || !city || !name || lat == null || lng == null) {
+      return res.status(400).json({ error: 'id, city, name, lat, and lng are required' });
+    }
+    const [[cityRow]] = await pool.execute('SELECT id FROM cities WHERE LOWER(name) = LOWER(?)', [city]);
+    if (!cityRow) return res.status(404).json({ error: `City "${city}" not found. Create it first via POST /api/cities` });
+
+    await pool.execute(
+      'INSERT INTO stops (id, city_id, name, lat, lng, popularity, avg_delay) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [id, cityRow.id, name, lat, lng, popularity || 0.5, avg_delay || 2.0]
+    );
+    res.status(201).json({ id, city, name, lat, lng, popularity: popularity || 0.5, avg_delay: avg_delay || 2.0 });
+  } catch (err) {
+    if (err.code === 'ER_DUP_ENTRY') {
+      return res.status(409).json({ error: 'Stop ID already exists' });
+    }
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/stops/:id', async (req, res) => {
+  try {
+    const { name, lat, lng, popularity, avg_delay } = req.body;
+    const [result] = await pool.execute(
+      'UPDATE stops SET name = COALESCE(?, name), lat = COALESCE(?, lat), lng = COALESCE(?, lng), popularity = COALESCE(?, popularity), avg_delay = COALESCE(?, avg_delay) WHERE id = ?',
+      [name, lat, lng, popularity, avg_delay, req.params.id]
+    );
+    if (result.affectedRows === 0) return res.status(404).json({ error: 'Stop not found' });
+    res.json({ message: 'Stop updated' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/stops/:id', async (req, res) => {
+  try {
+    const [result] = await pool.execute('DELETE FROM stops WHERE id = ?', [req.params.id]);
+    if (result.affectedRows === 0) return res.status(404).json({ error: 'Stop not found' });
+    res.json({ message: 'Stop deleted' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Routes ────────────────────────────────────────────────────────────────
+
+app.get('/api/routes', async (req, res) => {
+  try {
+    const routes = await queryRoutes({ city: req.query.city });
+    res.json(routes);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/routes', async (req, res) => {
+  try {
+    const { id, city, name, color, stops } = req.body;
+    if (!id || !city || !name) {
+      return res.status(400).json({ error: 'id, city, and name are required' });
+    }
+    const [[cityRow]] = await pool.execute('SELECT id FROM cities WHERE LOWER(name) = LOWER(?)', [city]);
+    if (!cityRow) return res.status(404).json({ error: `City "${city}" not found` });
+
+    await pool.execute(
+      'INSERT INTO routes (id, city_id, name, color) VALUES (?, ?, ?, ?)',
+      [id, cityRow.id, name, color || '#4f8cff']
+    );
+
+    if (stops && stops.length > 0) {
+      for (let i = 0; i < stops.length; i++) {
+        await pool.execute(
+          'INSERT INTO route_stops (route_id, stop_id, stop_order) VALUES (?, ?, ?)',
+          [id, stops[i], i]
+        );
+      }
+    }
+
+    res.status(201).json({ id, city, name, color: color || '#4f8cff', stops: stops || [] });
+  } catch (err) {
+    if (err.code === 'ER_DUP_ENTRY') {
+      return res.status(409).json({ error: 'Route ID already exists' });
+    }
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/routes/:id', async (req, res) => {
+  try {
+    const { name, color, stops } = req.body;
+    const [result] = await pool.execute(
+      'UPDATE routes SET name = COALESCE(?, name), color = COALESCE(?, color) WHERE id = ?',
+      [name, color, req.params.id]
+    );
+    if (result.affectedRows === 0) return res.status(404).json({ error: 'Route not found' });
+
+    // If stops array provided, replace the stop ordering
+    if (stops) {
+      await pool.execute('DELETE FROM route_stops WHERE route_id = ?', [req.params.id]);
+      for (let i = 0; i < stops.length; i++) {
+        await pool.execute(
+          'INSERT INTO route_stops (route_id, stop_id, stop_order) VALUES (?, ?, ?)',
+          [req.params.id, stops[i], i]
+        );
+      }
+    }
+
+    res.json({ message: 'Route updated' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/routes/:id', async (req, res) => {
+  try {
+    const [result] = await pool.execute('DELETE FROM routes WHERE id = ?', [req.params.id]);
+    if (result.affectedRows === 0) return res.status(404).json({ error: 'Route not found' });
+    res.json({ message: 'Route deleted' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Weather ───────────────────────────────────────────────────────────────
+
+app.get('/api/weather', async (req, res) => {
+  try {
+    const cityName = req.query.city || 'Istanbul';
+
+    // Try to get the latest weather from DB
+    const [rows] = await pool.execute(
+      `SELECT w.*, c.name AS city FROM weather w
+       JOIN cities c ON w.city_id = c.id
+       WHERE LOWER(c.name) = LOWER(?)
+       ORDER BY w.created_at DESC LIMIT 1`,
+      [cityName]
+    );
+
+    let weather;
+    if (rows.length > 0) {
+      const r = rows[0];
+      weather = {
+        city: r.city,
+        label: r.label,
+        icon: r.icon,
+        temp: r.temp,
+        humidity: r.humidity,
+        windSpeed: r.wind_speed,
+        precipitation: r.precipitation,
+        feelsLike: r.feels_like,
+      };
+    } else {
+      // No weather in DB — generate random
+      weather = generateRandomWeather(cityName);
+    }
+
+    // Feed to ML predictor
+    predictor.setWeather(weather);
+    res.json(weather);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/weather', async (req, res) => {
+  try {
+    const { city, label, icon, temp, humidity, windSpeed, precipitation, feelsLike } = req.body;
+    if (!city || !label || !icon || temp == null || humidity == null || windSpeed == null) {
+      return res.status(400).json({ error: 'city, label, icon, temp, humidity, and windSpeed are required' });
+    }
+    const [[cityRow]] = await pool.execute('SELECT id FROM cities WHERE LOWER(name) = LOWER(?)', [city]);
+    if (!cityRow) return res.status(404).json({ error: `City "${city}" not found` });
+
+    await pool.execute(
+      'INSERT INTO weather (city_id, label, icon, temp, humidity, wind_speed, precipitation, feels_like) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [cityRow.id, label, icon, temp, humidity, windSpeed, precipitation || 0, feelsLike || temp]
+    );
+
+    const weather = { city, label, icon, temp, humidity, windSpeed, precipitation: precipitation || 0, feelsLike: feelsLike || temp };
+    predictor.setWeather(weather);
+    res.status(201).json(weather);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+function generateRandomWeather(city) {
   const conditions = [
     { label: 'Clear', icon: 'sunny', temp: randomBetween(18, 30) },
     { label: 'Partly Cloudy', icon: 'partly_cloudy', temp: randomBetween(14, 24) },
@@ -76,7 +357,7 @@ function generateWeather(city) {
     { label: 'Windy', icon: 'windy', temp: randomBetween(12, 22) },
   ];
   const cond = conditions[randomBetween(0, conditions.length - 1)];
-  const weather = {
+  return {
     city,
     ...cond,
     humidity: randomBetween(40, 85),
@@ -84,67 +365,64 @@ function generateWeather(city) {
     precipitation: cond.label === 'Rainy' ? randomBetween(20, 80) : randomBetween(0, 10),
     feelsLike: cond.temp + randomBetween(-3, 2),
   };
-
-  // Feed weather to ML predictor
-  currentWeatherCache[city] = weather;
-  predictor.setWeather(weather);
-
-  return weather;
 }
 
-// ─── API Routes ─────────────────────────────────────────────────────────────
+// ─── ML Predictions ────────────────────────────────────────────────────────
 
-app.get('/api/stops', (req, res) => {
-  const { city } = req.query;
-  let result = stops;
-  if (city) result = stops.filter(s => s.city.toLowerCase() === city.toLowerCase());
-  res.json(result);
-});
+app.get('/api/stops/:id/arrivals', async (req, res) => {
+  try {
+    const stops = await queryStops({ id: req.params.id });
+    if (stops.length === 0) return res.status(404).json({ error: 'Stop not found' });
+    const stop = stops[0];
 
-app.get('/api/stops/:id', (req, res) => {
-  const stop = stops.find(s => s.id === req.params.id);
-  if (!stop) return res.status(404).json({ error: 'Stop not found' });
-  res.json(stop);
-});
+    // Ensure weather is loaded for this city
+    const [wRows] = await pool.execute(
+      `SELECT w.*, c.name AS city FROM weather w
+       JOIN cities c ON w.city_id = c.id
+       WHERE LOWER(c.name) = LOWER(?)
+       ORDER BY w.created_at DESC LIMIT 1`,
+      [stop.city]
+    );
+    if (wRows.length > 0) {
+      predictor.setWeather({ temp: wRows[0].temp, precipitation: wRows[0].precipitation, windSpeed: wRows[0].wind_speed });
+    } else {
+      predictor.setWeather(generateRandomWeather(stop.city));
+    }
 
-app.get('/api/stops/:id/arrivals', (req, res) => {
-  const stop = stops.find(s => s.id === req.params.id);
-  if (!stop) return res.status(404).json({ error: 'Stop not found' });
-
-  // If weather hasn't been fetched yet, generate it
-  if (!currentWeatherCache[stop.city]) {
-    generateWeather(stop.city);
+    const routes = await queryRoutes({ city: stop.city });
+    const arrivals = predictor.predictArrivals(stop, routes);
+    res.json(arrivals);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
-
-  // Use ML predictor
-  const arrivals = predictor.predictArrivals(stop, routes);
-  res.json(arrivals);
 });
 
-app.get('/api/stops/:id/crowd', (req, res) => {
-  const stop = stops.find(s => s.id === req.params.id);
-  if (!stop) return res.status(404).json({ error: 'Stop not found' });
+app.get('/api/stops/:id/crowd', async (req, res) => {
+  try {
+    const stops = await queryStops({ id: req.params.id });
+    if (stops.length === 0) return res.status(404).json({ error: 'Stop not found' });
+    const stop = stops[0];
 
-  if (!currentWeatherCache[stop.city]) {
-    generateWeather(stop.city);
+    const [wRows] = await pool.execute(
+      `SELECT w.*, c.name AS city FROM weather w
+       JOIN cities c ON w.city_id = c.id
+       WHERE LOWER(c.name) = LOWER(?)
+       ORDER BY w.created_at DESC LIMIT 1`,
+      [stop.city]
+    );
+    if (wRows.length > 0) {
+      predictor.setWeather({ temp: wRows[0].temp, precipitation: wRows[0].precipitation, windSpeed: wRows[0].wind_speed });
+    } else {
+      predictor.setWeather(generateRandomWeather(stop.city));
+    }
+
+    const routes = await queryRoutes({ city: stop.city });
+    const arrivals = predictor.predictArrivals(stop, routes);
+    const crowd = predictor.predictCrowd(stop, arrivals);
+    res.json(crowd);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
-
-  // Get current arrivals for delay context
-  const arrivals = predictor.predictArrivals(stop, routes);
-  const crowd = predictor.predictCrowd(req.params.id, arrivals);
-  res.json(crowd);
-});
-
-app.get('/api/routes', (req, res) => {
-  const { city } = req.query;
-  let result = routes;
-  if (city) result = routes.filter(r => r.city.toLowerCase() === city.toLowerCase());
-  res.json(result);
-});
-
-app.get('/api/weather', (req, res) => {
-  const city = req.query.city || 'Istanbul';
-  res.json(generateWeather(city));
 });
 
 // ML model info endpoint
@@ -160,7 +438,11 @@ app.get('/{*path}', (req, res) => {
 // ─── Start Server ───────────────────────────────────────────────────────────
 
 async function start() {
-  // Train ML models before accepting requests
+  console.log('\n📦 Initializing database...');
+  await initDatabase();
+  pool = require('./db/connection');
+  console.log('📦 Database ready.\n');
+
   await predictor.init();
 
   app.listen(PORT, () => {

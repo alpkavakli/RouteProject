@@ -4,6 +4,11 @@
 const API_BASE = '';
 
 const DataService = {
+  async getCities() {
+    const res = await fetch(`${API_BASE}/api/cities`);
+    return res.json();
+  },
+
   async getStops(city) {
     const url = city ? `${API_BASE}/api/stops?city=${city}` : `${API_BASE}/api/stops`;
     const res = await fetch(url);

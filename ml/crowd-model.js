@@ -1,8 +1,14 @@
 // ─── Crowd Estimation Model ─────────────────────────────────────────────
 // Random Forest Classifier for predicting stop crowd level (low/medium/high)
 
+const fs = require('fs');
+const path = require('path');
 const { RandomForestClassifier } = require('ml-random-forest');
 const { generateCrowdDataset } = require('./data-generator');
+
+const CACHE_DIR = path.join(__dirname, 'cache');
+const MODEL_PATH = path.join(CACHE_DIR, 'crowd-model.json');
+const METRICS_PATH = path.join(CACHE_DIR, 'crowd-metrics.json');
 
 const FEATURE_NAMES = [
   'hour', 'dayOfWeek', 'isRushHour', 'temperature', 'precipitation',
@@ -15,9 +21,40 @@ let model = null;
 let trainMetrics = null;
 
 /**
- * Train the crowd estimation model
+ * Try to load cached model, otherwise train from scratch
  */
 function train() {
+  if (loadFromCache()) return;
+  trainFresh();
+  saveToCache();
+}
+
+function loadFromCache() {
+  try {
+    if (!fs.existsSync(MODEL_PATH) || !fs.existsSync(METRICS_PATH)) return false;
+    const modelJson = JSON.parse(fs.readFileSync(MODEL_PATH, 'utf8'));
+    const metricsJson = JSON.parse(fs.readFileSync(METRICS_PATH, 'utf8'));
+    model = RandomForestClassifier.load(modelJson);
+    trainMetrics = metricsJson;
+    console.log(`   ✅ Crowd model loaded from cache — Accuracy: ${trainMetrics.accuracy}%`);
+    return true;
+  } catch (err) {
+    console.log(`   ⚠️ Cache load failed: ${err.message}, retraining...`);
+    return false;
+  }
+}
+
+function saveToCache() {
+  try {
+    if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR, { recursive: true });
+    fs.writeFileSync(MODEL_PATH, JSON.stringify(model.toJSON()));
+    fs.writeFileSync(METRICS_PATH, JSON.stringify(trainMetrics));
+  } catch (err) {
+    console.log(`   ⚠️ Cache save failed: ${err.message}`);
+  }
+}
+
+function trainFresh() {
   console.log('   Training crowd estimation model...');
   const start = Date.now();
 
@@ -34,7 +71,6 @@ function train() {
 
   model.train(trainX, trainY);
 
-  // Evaluate
   const predictions = model.predict(testX);
   let correct = 0;
   const confusion = [[0,0,0],[0,0,0],[0,0,0]];
@@ -47,7 +83,6 @@ function train() {
   const accuracy = (correct / testY.length) * 100;
   const elapsed = ((Date.now() - start) / 1000).toFixed(1);
 
-  // Per-class precision and recall
   const classMetrics = LABELS.map((label, idx) => {
     const tp = confusion[idx][idx];
     const fp = confusion.reduce((sum, row, r) => sum + (r !== idx ? row[idx] : 0), 0);

@@ -6,11 +6,7 @@ const MapController = (() => {
   let routePolylines = [];
   let selectedStopId = null;
   let onStopSelect = null;
-
-  const CITIES = {
-    Istanbul: { lat: 41.0082, lng: 28.9784, zoom: 13 },
-    Ankara:   { lat: 39.9334, lng: 32.8597, zoom: 13 },
-  };
+  let citiesMap = {};
 
   const BUS_ICON_SVG = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M4 16c0 .88.39 1.67 1 2.22V20c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h8v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1.78c.61-.55 1-1.34 1-2.22V6c0-3.5-3.58-4-8-4s-8 .5-8 4v10zm3.5 1c-.83 0-1.5-.67-1.5-1.5S6.67 14 7.5 14s1.5.67 1.5 1.5S8.33 17 7.5 17zm9 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm1.5-6H6V6h12v5z"/></svg>`;
 
@@ -24,13 +20,20 @@ const MapController = (() => {
     });
   }
 
-  function init(containerId, onSelect) {
+  function setCities(cities) {
+    citiesMap = {};
+    cities.forEach(c => {
+      citiesMap[c.name] = { lat: c.lat, lng: c.lng, zoom: c.zoom || 13 };
+    });
+  }
+
+  function init(containerId, onSelect, defaultCenter) {
     onStopSelect = onSelect;
 
-    const city = CITIES.Istanbul;
+    const city = defaultCenter || { lat: 41.0082, lng: 28.9784, zoom: 13 };
     map = L.map(containerId, {
       center: [city.lat, city.lng],
-      zoom: city.zoom,
+      zoom: city.zoom || 13,
       zoomControl: true,
       attributionControl: true,
     });
@@ -98,9 +101,9 @@ const MapController = (() => {
   }
 
   function flyToCity(cityName) {
-    const city = CITIES[cityName];
+    const city = citiesMap[cityName];
     if (city) {
-      map.flyTo([city.lat, city.lng], city.zoom, { duration: 1.2 });
+      map.flyTo([city.lat, city.lng], city.zoom || 13, { duration: 1.2 });
     }
   }
 
@@ -131,5 +134,5 @@ const MapController = (() => {
     return selectedStopId;
   }
 
-  return { init, renderStops, selectStop, flyToCity, drawRoutes, getSelectedStopId };
+  return { init, setCities, renderStops, selectStop, flyToCity, drawRoutes, getSelectedStopId };
 })();

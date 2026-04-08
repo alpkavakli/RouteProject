@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Predictive Transit API",
-    "description": "API collection for Predictive Transit — ML-powered bus arrival prediction and stop crowd estimation for Istanbul and Ankara.",
+    "description": "API collection for Predictive Transit — ML-powered bus arrival prediction and stop crowd estimation. Includes CRUD for cities, stops, routes, and weather.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -12,98 +12,111 @@
   ],
   "item": [
     {
-      "name": "Stops",
+      "name": "Cities",
       "item": [
         {
-          "name": "Get All Stops",
+          "name": "List Cities",
           "request": {
             "method": "GET",
-            "url": {
-              "raw": "{{baseUrl}}/api/stops",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "stops"]
-            },
-            "description": "Returns all bus stops across Istanbul and Ankara."
+            "url": { "raw": "{{baseUrl}}/api/cities", "host": ["{{baseUrl}}"], "path": ["api", "cities"] },
+            "description": "Returns all cities from the database."
           }
         },
         {
-          "name": "Get Stops by City",
+          "name": "Create City",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{baseUrl}}/api/cities", "host": ["{{baseUrl}}"], "path": ["api", "cities"] },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Izmir\",\n  \"lat\": 38.4192,\n  \"lng\": 27.1287,\n  \"zoom\": 13\n}"
+            },
+            "description": "Add a new city. The city will immediately appear in the frontend toggle."
+          }
+        },
+        {
+          "name": "Update City",
+          "request": {
+            "method": "PUT",
+            "url": { "raw": "{{baseUrl}}/api/cities/3", "host": ["{{baseUrl}}"], "path": ["api", "cities", "3"] },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"zoom\": 14\n}"
+            },
+            "description": "Update a city's properties. Only send fields you want to change."
+          }
+        },
+        {
+          "name": "Delete City",
+          "request": {
+            "method": "DELETE",
+            "url": { "raw": "{{baseUrl}}/api/cities/3", "host": ["{{baseUrl}}"], "path": ["api", "cities", "3"] },
+            "description": "Delete a city. Cascades to all its stops, routes, and weather data."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Stops",
+      "item": [
+        {
+          "name": "List All Stops",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/stops", "host": ["{{baseUrl}}"], "path": ["api", "stops"] }
+          }
+        },
+        {
+          "name": "List Stops by City",
           "request": {
             "method": "GET",
             "url": {
               "raw": "{{baseUrl}}/api/stops?city=Istanbul",
               "host": ["{{baseUrl}}"],
               "path": ["api", "stops"],
-              "query": [
-                { "key": "city", "value": "Istanbul" }
-              ]
-            },
-            "description": "Filter stops by city name (Istanbul or Ankara)."
+              "query": [{ "key": "city", "value": "Istanbul" }]
+            }
           }
         },
         {
           "name": "Get Stop by ID",
           "request": {
             "method": "GET",
-            "url": {
-              "raw": "{{baseUrl}}/api/stops/ist-1",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "stops", "ist-1"]
-            },
-            "description": "Get details for a specific stop. Example: ist-1 (Taksim Meydani)."
-          }
-        }
-      ]
-    },
-    {
-      "name": "ML Predictions",
-      "item": [
-        {
-          "name": "Predict Arrivals for Stop",
-          "request": {
-            "method": "GET",
-            "url": {
-              "raw": "{{baseUrl}}/api/stops/ist-1/arrivals",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "stops", "ist-1", "arrivals"]
-            },
-            "description": "ML-predicted bus arrivals for a stop. Returns predicted delay, confidence score, occupancy level, and interpretable delay factors per route. Powered by a Random Forest Regressor trained on 3000 synthetic samples."
+            "url": { "raw": "{{baseUrl}}/api/stops/ist-1", "host": ["{{baseUrl}}"], "path": ["api", "stops", "ist-1"] }
           }
         },
         {
-          "name": "Predict Crowd for Stop",
+          "name": "Create Stop",
           "request": {
-            "method": "GET",
-            "url": {
-              "raw": "{{baseUrl}}/api/stops/ist-1/crowd",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "stops", "ist-1", "crowd"]
+            "method": "POST",
+            "url": { "raw": "{{baseUrl}}/api/stops", "host": ["{{baseUrl}}"], "path": ["api", "stops"] },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"izm-1\",\n  \"city\": \"Izmir\",\n  \"name\": \"Konak Meydani\",\n  \"lat\": 38.4192,\n  \"lng\": 27.1287,\n  \"popularity\": 0.85,\n  \"avg_delay\": 2.5\n}"
             },
-            "description": "ML-predicted crowd level (low/medium/high) for a stop. Returns estimated passenger count, class probabilities, confidence, trend, and human-readable reason. Powered by a Random Forest Classifier trained on 2000 synthetic samples."
+            "description": "Create a new stop. City must exist first. popularity (0-1) and avg_delay (minutes) feed into ML predictions."
           }
         },
         {
-          "name": "Predict Arrivals (Ankara)",
+          "name": "Update Stop",
           "request": {
-            "method": "GET",
-            "url": {
-              "raw": "{{baseUrl}}/api/stops/ank-1/arrivals",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "stops", "ank-1", "arrivals"]
-            },
-            "description": "Arrival predictions for Ankara Kizilay stop."
+            "method": "PUT",
+            "url": { "raw": "{{baseUrl}}/api/stops/izm-1", "host": ["{{baseUrl}}"], "path": ["api", "stops", "izm-1"] },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"popularity\": 0.90,\n  \"avg_delay\": 3.0\n}"
+            }
           }
         },
         {
-          "name": "Predict Crowd (Ankara)",
+          "name": "Delete Stop",
           "request": {
-            "method": "GET",
-            "url": {
-              "raw": "{{baseUrl}}/api/stops/ank-1/crowd",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "stops", "ank-1", "crowd"]
-            },
-            "description": "Crowd prediction for Ankara Kizilay stop."
+            "method": "DELETE",
+            "url": { "raw": "{{baseUrl}}/api/stops/izm-1", "host": ["{{baseUrl}}"], "path": ["api", "stops", "izm-1"] }
           }
         }
       ]
@@ -112,36 +125,61 @@
       "name": "Routes",
       "item": [
         {
-          "name": "Get All Routes",
+          "name": "List All Routes",
           "request": {
             "method": "GET",
-            "url": {
-              "raw": "{{baseUrl}}/api/routes",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "routes"]
-            },
-            "description": "Returns all bus routes with stop mappings."
+            "url": { "raw": "{{baseUrl}}/api/routes", "host": ["{{baseUrl}}"], "path": ["api", "routes"] }
           }
         },
         {
-          "name": "Get Routes by City",
+          "name": "List Routes by City",
           "request": {
             "method": "GET",
             "url": {
               "raw": "{{baseUrl}}/api/routes?city=Ankara",
               "host": ["{{baseUrl}}"],
               "path": ["api", "routes"],
-              "query": [
-                { "key": "city", "value": "Ankara" }
-              ]
+              "query": [{ "key": "city", "value": "Ankara" }]
+            }
+          }
+        },
+        {
+          "name": "Create Route",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{baseUrl}}/api/routes", "host": ["{{baseUrl}}"], "path": ["api", "routes"] },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"IZM-1\",\n  \"city\": \"Izmir\",\n  \"name\": \"IZM-1 Konak-Alsancak\",\n  \"color\": \"#ef4444\",\n  \"stops\": [\"izm-1\", \"izm-2\"]\n}"
             },
-            "description": "Filter routes by city."
+            "description": "Create a new route. stops array defines the ordered stop sequence."
+          }
+        },
+        {
+          "name": "Update Route",
+          "request": {
+            "method": "PUT",
+            "url": { "raw": "{{baseUrl}}/api/routes/IZM-1", "host": ["{{baseUrl}}"], "path": ["api", "routes", "IZM-1"] },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"IZM-1 Konak-Alsancak Express\",\n  \"stops\": [\"izm-1\", \"izm-3\", \"izm-2\"]\n}"
+            },
+            "description": "Update route properties. If stops array is provided, the stop ordering is fully replaced."
+          }
+        },
+        {
+          "name": "Delete Route",
+          "request": {
+            "method": "DELETE",
+            "url": { "raw": "{{baseUrl}}/api/routes/IZM-1", "host": ["{{baseUrl}}"], "path": ["api", "routes", "IZM-1"] }
           }
         }
       ]
     },
     {
-      "name": "Weather & Model",
+      "name": "Weather",
       "item": [
         {
           "name": "Get Weather",
@@ -151,23 +189,51 @@
               "raw": "{{baseUrl}}/api/weather?city=Istanbul",
               "host": ["{{baseUrl}}"],
               "path": ["api", "weather"],
-              "query": [
-                { "key": "city", "value": "Istanbul" }
-              ]
+              "query": [{ "key": "city", "value": "Istanbul" }]
             },
-            "description": "Current weather conditions. Weather data feeds into ML models as features (temperature, precipitation, wind speed affect predictions)."
+            "description": "Get latest weather for a city. Returns stored data from DB, or generates random if none exists. Weather feeds into ML predictions."
           }
         },
         {
-          "name": "Get ML Model Info",
+          "name": "Insert Weather",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{baseUrl}}/api/weather", "host": ["{{baseUrl}}"], "path": ["api", "weather"] },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"city\": \"Istanbul\",\n  \"label\": \"Rainy\",\n  \"icon\": \"rainy\",\n  \"temp\": 12,\n  \"humidity\": 85,\n  \"windSpeed\": 25,\n  \"precipitation\": 45,\n  \"feelsLike\": 9\n}"
+            },
+            "description": "Insert weather data for a city. This becomes the current weather used for ML predictions. icon values: sunny, partly_cloudy, rainy, cloudy, windy."
+          }
+        }
+      ]
+    },
+    {
+      "name": "ML Predictions",
+      "item": [
+        {
+          "name": "Predict Arrivals",
           "request": {
             "method": "GET",
-            "url": {
-              "raw": "{{baseUrl}}/api/model/info",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "model", "info"]
-            },
-            "description": "Returns ML model metadata: training metrics (MAE, accuracy), feature lists, sample counts, and current weather state used for predictions."
+            "url": { "raw": "{{baseUrl}}/api/stops/ist-1/arrivals", "host": ["{{baseUrl}}"], "path": ["api", "stops", "ist-1", "arrivals"] },
+            "description": "ML-predicted bus arrivals for a stop."
+          }
+        },
+        {
+          "name": "Predict Crowd",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/stops/ist-1/crowd", "host": ["{{baseUrl}}"], "path": ["api", "stops", "ist-1", "crowd"] },
+            "description": "ML-predicted crowd level for a stop."
+          }
+        },
+        {
+          "name": "ML Model Info",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/model/info", "host": ["{{baseUrl}}"], "path": ["api", "model", "info"] },
+            "description": "Returns ML model training metrics and status."
           }
         }
       ]

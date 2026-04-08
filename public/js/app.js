@@ -3,15 +3,26 @@
 (async function () {
   'use strict';
 
-  let currentCity = 'Istanbul';
+  let currentCity = null;
   let allStops = [];
   let allRoutes = [];
+  let allCities = [];
   let refreshInterval = null;
 
   // ─── Initialize ─────────────────────────────────────────────────
   async function init() {
-    // Init map
-    MapController.init('map', onStopSelected);
+    // Load cities from DB
+    allCities = await DataService.getCities();
+    if (allCities.length === 0) return;
+
+    currentCity = allCities[0].name;
+
+    // Feed cities to map and init
+    MapController.setCities(allCities);
+    MapController.init('map', onStopSelected, allCities[0]);
+
+    // Build city toggle buttons
+    buildCityToggle(allCities);
 
     // Load data for default city
     await switchCity(currentCity);
@@ -22,6 +33,18 @@
 
     // Fetch and render model info
     UI.renderModelInfo();
+  }
+
+  function buildCityToggle(cities) {
+    const toggle = document.getElementById('cityToggle');
+    toggle.innerHTML = '';
+    cities.forEach((city, idx) => {
+      const btn = document.createElement('button');
+      btn.className = 'city-toggle__btn' + (idx === 0 ? ' active' : '');
+      btn.dataset.city = city.name;
+      btn.textContent = city.name;
+      toggle.appendChild(btn);
+    });
   }
 
   // ─── City Switching ─────────────────────────────────────────────

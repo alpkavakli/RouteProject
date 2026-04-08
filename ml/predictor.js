@@ -3,7 +3,6 @@
 
 const arrivalModel = require('./arrival-model');
 const crowdModel = require('./crowd-model');
-const { STOP_PROFILES } = require('./data-generator');
 
 let currentWeather = { temperature: 20, precipitation: 0, windSpeed: 10 };
 let isInitialized = false;
@@ -47,7 +46,7 @@ function predictArrivals(stop, routes) {
   const isWeekday = dayOfWeek >= 1 && dayOfWeek <= 5;
   const isRushHour = isWeekday && ((hour >= 7 && hour <= 9) || (hour >= 17 && hour <= 19));
 
-  const profile = STOP_PROFILES[stop.id] || { popularity: 0.5, avgDelay: 2 };
+  const profile = { popularity: stop.popularity || 0.5, avgDelay: stop.avg_delay || 2 };
 
   return stop.routes.map((routeId, idx) => {
     const route = routes.find(r => r.id === routeId);
@@ -112,18 +111,19 @@ function predictArrivals(stop, routes) {
 
 /**
  * Predict crowd level for a stop
- * @param {string} stopId
+ * @param {Object} stop - stop object with id, popularity, avg_delay
  * @param {Array} arrivals - current arrival predictions (for delay context)
  * @returns {Object} crowd prediction
  */
-function predictCrowd(stopId, arrivals = []) {
+function predictCrowd(stop, arrivals = []) {
   const now = new Date();
   const hour = now.getHours();
   const dayOfWeek = now.getDay();
   const isWeekday = dayOfWeek >= 1 && dayOfWeek <= 5;
   const isRushHour = isWeekday && ((hour >= 7 && hour <= 9) || (hour >= 17 && hour <= 19));
 
-  const profile = STOP_PROFILES[stopId] || { popularity: 0.5 };
+  const stopId = typeof stop === 'string' ? stop : stop.id;
+  const profile = { popularity: (typeof stop === 'object' ? stop.popularity : null) || 0.5 };
 
   // Average delay from current arrivals
   const avgDelay = arrivals.length > 0
