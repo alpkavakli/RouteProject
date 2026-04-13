@@ -305,10 +305,50 @@ async function loadHackathonData(pool) {
   await loadTrips(pool);
   await loadArrivals(pool);
   await loadPassengerFlow(pool);
+  await seedWeatherFromTrips(pool, sivasCityId);
 
   const elapsed = ((Date.now() - start) / 1000).toFixed(1);
   console.log(`📂 All hackathon data loaded in ${elapsed}s\n`);
   return true;
 }
 
-module.exports = { loadHackathonData };
+// Seed a single "current weather" row for Sivas from trip averages so the
+// ML predictor has stable, authentic inputs instead of rolling random weather.
+async function seedWeatherFromTrips(pool, sivasCityId) {
+  const [[agg]] = await pool.execute(
+    `SELECT AVG(temperature_c) AS temp,
+            AVG(precipitation_mm) AS precip,
+            AVG(wind_speed_kmh) AS wind
+     FROM hackathon_trips`
+  );
+
+  if (!agg || agg.temp == null) return;
+
+  const temp = Math.round(Number(agg.temp));
+  const precip = Math.round(Number(agg.precip) || 0);
+  const wind = Math.round(Number(agg.wind) || 0);
+  const label = precip > 10 ? 'Rainy' : temp < 5 ? 'Cold' : temp > 25 ? 'Warm' : 'Clear';
+  const icon = precip > 10 ? 'rainy' : 'partly_cloudy';
+
+  // Replace any existing Sivas weather row so the latest read is stable.
+  await pool.execute('DELETE FROM weather WHERE city_id = ?', [sivasCityId]);
+  await pool.execute(
+    `INSERT INTO weather (city_id, label, icon, temp, humidity, wind_speed, precipitation, feels_like)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [sivasCityId, label, icon, temp, 60, wind, precip, temp]
+  );
+  console.log(`   🌤️ Seeded Sivas weather from trip averages: ${label} ${temp}°C, ${precip}mm precip, ${wind} km/h`);
+}
+
+async function ensureSivasWeatherSeeded(pool) {
+  const [[sivasRow]] = await pool.execute("SELECT id FROM cities WHERE LOWER(name) = 'sivas'");
+  if (!sivasRow) return;
+  const [[exists]] = await pool.execute(
+    'SELECT COUNT(*) AS cnt FROM weather WHERE city_id = ?',
+    [sivasRow.id]
+  );
+  if (exists.cnt > 0) return;
+  await seedWeatherFromTrips(pool, sivasRow.id);
+}
+
+module.exports = { loadHackathonData, ensureSivasWeatherSeeded };

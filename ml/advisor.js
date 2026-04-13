@@ -38,8 +38,12 @@ async function generateAdvice(stop, arrivals, crowd, pool, allRoutes) {
     const remainingStops = Math.max(0, totalStops - stopSequence - 1);
 
     // ─── Occupancy Estimation ────────────────────────────────────────
-    const occupancyPct = estimateOccupancy(arrival, seatData[routeId]);
-    const busCapacity = 60;
+    // Prefer the real trip average from hackathon_trips; fall back to an
+    // ML-class-derived estimate blended with stop-level history.
+    const occupancyPct = (arrival.realOccupancyPct != null && !Number.isNaN(arrival.realOccupancyPct))
+      ? arrival.realOccupancyPct
+      : estimateOccupancy(arrival, seatData[routeId]);
+    const busCapacity = arrival.busCapacity || 60;
     const seatsAvailable = Math.max(0, Math.round(busCapacity * (1 - occupancyPct / 100)));
 
     // ─── Seat Turnover ───────────────────────────────────────────────
@@ -56,7 +60,7 @@ async function generateAdvice(stop, arrivals, crowd, pool, allRoutes) {
       delayMin: Math.max(0, arrival.delayMin),
       isRushHour,
       precipitation: 0, // we'd need weather, use 0 as default
-      speedFactor: 1,
+      speedFactor: arrival.realSpeedFactor || 1,
       remainingStops,
     });
 
@@ -64,9 +68,15 @@ async function generateAdvice(stop, arrivals, crowd, pool, allRoutes) {
     const isLastBus = lastBusInfo[routeId] || false;
 
     // ─── Next Bus Comparison ─────────────────────────────────────────
-    const nextBus = arrivals.find((a, i) => i > idx && a.routeId === routeId);
-    const minutesToNextBus = nextBus ? nextBus.predictedMin - arrival.predictedMin : null;
-    const nextBusOccupancyPct = nextBus ? estimateOccupancy(nextBus, seatData[routeId]) * 0.7 : null;
+    // Prefer the real "minutes to next bus" from the hackathon schedule.
+    // Occupancy of the next bus is assumed ~70% of this bus's real average.
+    const minutesToNextBus = arrival.realNextBusMin != null
+      ? arrival.realNextBusMin
+      : (() => {
+          const nextBus = arrivals.find((a, i) => i > idx && a.routeId === routeId);
+          return nextBus ? nextBus.predictedMin - arrival.predictedMin : null;
+        })();
+    const nextBusOccupancyPct = minutesToNextBus != null ? occupancyPct * 0.7 : null;
 
     // ─── Recommendation Generation ───────────────────────────────────
     const recommendation = generateRecommendation({

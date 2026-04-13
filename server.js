@@ -6,7 +6,7 @@ const path = require('path');
 const predictor = require('./ml/predictor');
 const advisor = require('./ml/advisor');
 const { initDatabase } = require('./db/init');
-const { loadHackathonData } = require('./db/load-csv');
+const { loadHackathonData, ensureSivasWeatherSeeded } = require('./db/load-csv');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -392,7 +392,7 @@ app.get('/api/stops/:id/arrivals', async (req, res) => {
     }
 
     const routes = await queryRoutes({ city: stop.city });
-    const arrivals = predictor.predictArrivals(stop, routes);
+    const arrivals = await predictor.predictArrivals(stop, routes, pool);
     res.json(arrivals);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -419,7 +419,7 @@ app.get('/api/stops/:id/crowd', async (req, res) => {
     }
 
     const routes = await queryRoutes({ city: stop.city });
-    const arrivals = predictor.predictArrivals(stop, routes);
+    const arrivals = await predictor.predictArrivals(stop, routes, pool);
     const crowd = predictor.predictCrowd(stop, arrivals);
     res.json(crowd);
   } catch (err) {
@@ -450,7 +450,7 @@ app.get('/api/stops/:id/advice', async (req, res) => {
     }
 
     const routes = await queryRoutes({ city: stop.city });
-    const arrivals = predictor.predictArrivals(stop, routes);
+    const arrivals = await predictor.predictArrivals(stop, routes, pool);
     const crowd = predictor.predictCrowd(stop, arrivals);
 
     const advice = await advisor.generateAdvice(stop, arrivals, crowd, pool, routes);
@@ -504,6 +504,8 @@ async function start() {
 
   // Load hackathon CSV data if not already loaded
   await loadHackathonData(pool);
+  // Ensure Sivas has a stable weather row derived from trip averages
+  await ensureSivasWeatherSeeded(pool);
 
   // Delete model cache to force retraining on real data
   const fs = require('fs');
