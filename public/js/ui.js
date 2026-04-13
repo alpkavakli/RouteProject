@@ -72,17 +72,25 @@ const UI = (() => {
     }).join('');
   }
 
-  // ─── Crowd Card ───────────────────────────────────────────────────
+  // ─── Crowd Card (5-class) ─────────────────────────────────────────
   function renderCrowd(crowd) {
     const container = document.getElementById('crowdCard');
     const level = crowd.level;
 
-    const dotClass = (i, lvl) => {
-      if (lvl === 'low' && i === 0) return `active-low`;
-      if (lvl === 'medium' && i <= 1) return `active-medium`;
-      if (lvl === 'high') return `active-high`;
-      return '';
+    // 5-class mapping
+    const crowdConfig = {
+      empty:    { color: '#22c55e', emoji: '🟢', dotCount: 0 },
+      light:    { color: '#84cc16', emoji: '🟡', dotCount: 1 },
+      low:      { color: '#22c55e', emoji: '🟢', dotCount: 0 },
+      moderate: { color: '#f59e0b', emoji: '🟠', dotCount: 2 },
+      medium:   { color: '#f59e0b', emoji: '🟠', dotCount: 2 },
+      busy:     { color: '#ef4444', emoji: '🔴', dotCount: 3 },
+      high:     { color: '#ef4444', emoji: '🔴', dotCount: 3 },
+      crowded:  { color: '#991b1b', emoji: '⛔', dotCount: 4 },
     };
+
+    const config = crowdConfig[level] || crowdConfig.moderate;
+    const totalDots = 5;
 
     const trendIcon = { rising: '📈', stable: '➡️', falling: '📉' };
     const trendLabel = { rising: 'Rising', stable: 'Stable', falling: 'Falling' };
@@ -91,15 +99,15 @@ const UI = (() => {
       ? `<span class="ml-badge">🧠 ML Predicted</span>`
       : '';
 
-    // Probability bars
-    const probSection = crowd.probabilities ? `
-      <div style="display:flex;gap:6px;margin-top:8px;align-items:center;">
-        <span style="font-size:10px;color:var(--text-muted);width:50px;">Prob:</span>
-        <div style="flex:1;display:flex;gap:3px;align-items:center;">
-          <span style="font-size:10px;color:var(--crowd-low);">L ${crowd.probabilities.low}%</span>
-          <span style="font-size:10px;color:var(--crowd-medium);margin-left:auto;">M ${crowd.probabilities.medium}%</span>
-          <span style="font-size:10px;color:var(--crowd-high);margin-left:auto;">H ${crowd.probabilities.high}%</span>
-        </div>
+    // Probability bars for all available classes
+    const probKeys = crowd.probabilities ? Object.keys(crowd.probabilities) : [];
+    const probSection = probKeys.length > 0 ? `
+      <div style="display:flex;gap:4px;margin-top:8px;flex-wrap:wrap;">
+        ${probKeys.map(k => {
+          const pct = crowd.probabilities[k];
+          const c = (crowdConfig[k] || {}).color || '#999';
+          return `<span style="font-size:10px;color:${c};background:${c}15;padding:2px 6px;border-radius:6px;">${k} ${pct}%</span>`;
+        }).join('')}
       </div>
     ` : '';
 
@@ -108,9 +116,11 @@ const UI = (() => {
         <div class="crowd-card__top">
           <div class="crowd-card__level">
             <div class="crowd-card__indicator">
-              ${[0, 1, 2].map(i => `<div class="crowd-dot ${dotClass(i, level)}"></div>`).join('')}
+              ${Array.from({ length: totalDots }, (_, i) =>
+                `<div class="crowd-dot" style="background:${i <= config.dotCount ? config.color : 'var(--border)'}; opacity:${i <= config.dotCount ? 1 : 0.3}"></div>`
+              ).join('')}
             </div>
-            <span class="crowd-card__label ${level}">${level.charAt(0).toUpperCase() + level.slice(1)}</span>
+            <span class="crowd-card__label" style="color:${config.color}">${config.emoji} ${level.charAt(0).toUpperCase() + level.slice(1)}</span>
             ${mlTag}
           </div>
           <div class="crowd-card__count">~<span>${crowd.estimatedCount}</span> people</div>
@@ -131,7 +141,7 @@ const UI = (() => {
     document.getElementById('crowdUpdatedAgo').textContent = `AI predicted`;
   }
 
-  // ─── Arrival Cards ────────────────────────────────────────────────
+  // ─── Advice Cards (Smart Recommendations) ─────────────────────────
   let countdownIntervals = [];
 
   function clearCountdowns() {
@@ -139,20 +149,201 @@ const UI = (() => {
     countdownIntervals = [];
   }
 
+  function renderAdvice(adviceData) {
+    clearCountdowns();
+    const container = document.getElementById('arrivalCards');
+    container.innerHTML = '';
+
+    if (!adviceData || !adviceData.options) return;
+
+    const options = adviceData.options;
+    const bestIdx = adviceData.bestOption || 0;
+
+    document.getElementById('arrivalCount').textContent = `${options.length} buses`;
+
+    // Global advice
+    if (adviceData.globalAdvice) {
+      const globalDiv = document.createElement('div');
+      globalDiv.className = 'global-advice animate-slide-up';
+      globalDiv.innerHTML = `<div class="global-advice__text">${adviceData.globalAdvice}</div>`;
+      container.appendChild(globalDiv);
+    }
+
+    options.forEach((opt, idx) => {
+      const isBest = idx === bestIdx;
+      const card = document.createElement('div');
+      card.className = `advice-card animate-slide-up ${isBest ? 'recommended' : ''}`;
+      card.style.animationDelay = `${idx * 80}ms`;
+
+      // Status
+      const statusLabel = {
+        'on-time': '✅ On Time',
+        'delayed': '⚠️ Delayed',
+        'early': '⚡ Early',
+      };
+
+      // Stress color
+      const stressColors = {
+        'Rahat': '#22c55e',
+        'Normal': '#f59e0b',
+        'Yoğun': '#f97316',
+        'Stresli': '#ef4444',
+      };
+      const stressColor = stressColors[opt.stressLabel] || '#888';
+
+      // Occupancy bar
+      const occColor = opt.occupancyPct < 40 ? '#22c55e' : opt.occupancyPct < 70 ? '#f59e0b' : '#ef4444';
+
+      // Crowd level badge
+      const crowdColors = {
+        empty: '#22c55e', light: '#84cc16', moderate: '#f59e0b',
+        busy: '#ef4444', crowded: '#991b1b',
+        low: '#22c55e', medium: '#f59e0b', high: '#ef4444',
+      };
+      const crowdColor = crowdColors[opt.crowdLevel] || '#888';
+
+      // Recommendation chip
+      const recPriorityColors = {
+        urgent: '#ef4444', critical: '#991b1b', suggestion: '#3b82f6',
+        info: '#8b5cf6', ok: '#22c55e', warning: '#f59e0b',
+      };
+      const recColor = recPriorityColors[opt.recommendation?.priority] || '#3b82f6';
+
+      // Factors
+      const factors = opt.factors || [];
+      const factorsHTML = factors.length > 0 ? `
+        <div class="advice-card__factors">
+          ${factors.map(f =>
+            `<span class="factor-chip ${f.type}">${f.icon} ${f.label} ${f.impact}</span>`
+          ).join('')}
+        </div>
+      ` : '';
+
+      // Seat turnover
+      const turnoverHTML = opt.seatTurnoverNote ? `
+        <div class="advice-card__turnover">🪑 ${opt.seatTurnoverNote}</div>
+      ` : '';
+
+      // Last bus badge
+      const lastBusBadge = opt.isLastBus ? `<span class="last-bus-badge">⚠️ Son Sefer</span>` : '';
+
+      // Run badge
+      const runBadge = opt.predictedMin <= 2 ? `<span class="run-badge">🏃 Koş!</span>` : '';
+
+      const arrivalTime = Date.now() + opt.predictedMin * 60 * 1000;
+
+      card.innerHTML = `
+        ${isBest ? '<div class="advice-card__best-tag">⭐ En İyi Seçenek</div>' : ''}
+        ${lastBusBadge}
+        ${runBadge}
+        <div class="advice-card__top">
+          <div class="advice-card__route-info">
+            <span class="advice-card__route-num" style="background:${opt.routeColor}">${opt.routeId}</span>
+            <div>
+              <div class="advice-card__dest">→ ${opt.destination} <span class="ml-badge">🧠 ML</span></div>
+              <div class="advice-card__vehicle">${opt.vehicleId}</div>
+            </div>
+          </div>
+          <div class="advice-card__time">
+            <div class="advice-card__countdown" id="cd-${idx}" style="color:${opt.routeColor}">
+              ${opt.predictedMin}<span class="advice-card__countdown-unit"> dk</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="advice-card__metrics">
+          <div class="advice-card__metric">
+            <div class="advice-card__metric-label">Yoğunluk</div>
+            <span class="advice-card__crowd-badge" style="background:${crowdColor}20;color:${crowdColor};border:1px solid ${crowdColor}40">
+              ${opt.crowdLevel}
+            </span>
+          </div>
+          <div class="advice-card__metric">
+            <div class="advice-card__metric-label">Doluluk</div>
+            <div class="occupancy-bar">
+              <div class="occupancy-bar__fill" style="width:${opt.occupancyPct}%;background:${occColor}"></div>
+            </div>
+            <span class="occupancy-pct">${opt.occupancyPct}%</span>
+          </div>
+          <div class="advice-card__metric">
+            <div class="advice-card__metric-label">Koltuk</div>
+            <span style="font-weight:600;color:${opt.seatsAvailable > 10 ? '#22c55e' : opt.seatsAvailable > 0 ? '#f59e0b' : '#ef4444'}">
+              🪑 ${opt.seatsAvailable}
+            </span>
+          </div>
+          <div class="advice-card__metric">
+            <div class="advice-card__metric-label">Stres</div>
+            <span class="stress-badge" style="background:${stressColor}20;color:${stressColor};border:1px solid ${stressColor}40">
+              ${opt.stressScore} · ${opt.stressLabel}
+            </span>
+          </div>
+        </div>
+
+        <div class="advice-card__bottom">
+          <span class="advice-card__status ${opt.status}">${statusLabel[opt.status]}</span>
+          <span class="advice-card__scheduled">Planlanan: ${opt.scheduledMin}dk</span>
+          ${opt.minutesToNextBus ? `<span class="advice-card__next">Sonraki: ${opt.minutesToNextBus}dk</span>` : ''}
+        </div>
+
+        ${turnoverHTML}
+        ${factorsHTML}
+
+        ${opt.recommendation ? `
+          <div class="recommendation-chip" style="background:${recColor}15;border:1px solid ${recColor}30;color:${recColor}">
+            <span class="recommendation-chip__icon">${opt.recommendation.icon}</span>
+            <span class="recommendation-chip__text">${opt.recommendation.text}</span>
+          </div>
+        ` : ''}
+      `;
+
+      // Left border color
+      card.style.borderLeftColor = opt.routeColor;
+      card.style.borderLeftWidth = '3px';
+      card.style.borderLeftStyle = 'solid';
+
+      container.appendChild(card);
+
+      // Live countdown
+      const cdEl = document.getElementById(`cd-${idx}`);
+      if (cdEl) {
+        const interval = setInterval(() => {
+          const remaining = Math.max(0, Math.round((arrivalTime - Date.now()) / 60000));
+          if (remaining <= 0) {
+            cdEl.innerHTML = `<span style="color:var(--accent-green)">Geldi!</span>`;
+            clearInterval(interval);
+          } else if (remaining <= 1) {
+            cdEl.innerHTML = `<span style="color:var(--accent-amber)">~1<span class="advice-card__countdown-unit"> dk</span></span>`;
+            cdEl.style.animation = 'countdownPulse 1s ease infinite';
+          } else {
+            cdEl.innerHTML = `${remaining}<span class="advice-card__countdown-unit"> dk</span>`;
+          }
+        }, 15000);
+        countdownIntervals.push(interval);
+      }
+    });
+  }
+
+  // Legacy renderArrivals — delegates to renderAdvice for backward compat
   function renderArrivals(arrivals) {
+    // If it's advice data, use the new renderer
+    if (arrivals && arrivals.options) {
+      renderAdvice(arrivals);
+      return;
+    }
+
+    // Legacy: convert old arrivals format to advice-like format
     clearCountdowns();
     const container = document.getElementById('arrivalCards');
     container.innerHTML = '';
 
     document.getElementById('arrivalCount').textContent = `${arrivals.length} buses`;
 
-    // Find recommended: first on-time/early with lowest predicted time and low crowd
     const recommended = arrivals.find(a => a.status !== 'delayed' && a.occupancy !== 'high') || arrivals[0];
 
     arrivals.forEach((arrival, idx) => {
       const isRecommended = arrival === recommended;
       const card = document.createElement('div');
-      card.className = `arrival-card animate-slide-up ${isRecommended ? 'recommended' : ''}`;
+      card.className = `advice-card animate-slide-up ${isRecommended ? 'recommended' : ''}`;
       card.style.animationDelay = `${idx * 60}ms`;
 
       const statusLabel = {
@@ -161,68 +352,42 @@ const UI = (() => {
         'early': '⚡ Early',
       };
 
-      const occupancyIcon = {
-        'low': '🟢',
-        'medium': '🟡',
-        'high': '🔴',
+      const crowdColors = {
+        empty: '#22c55e', light: '#84cc16', moderate: '#f59e0b',
+        busy: '#ef4444', crowded: '#991b1b',
+        low: '#22c55e', medium: '#f59e0b', high: '#ef4444',
       };
-
-      // AI factors section
-      const factors = arrival.factors || [];
-      const factorsHTML = factors.length > 0 ? `
-        <div class="arrival-card__factors">
-          ${factors.map(f =>
-            `<span class="factor-chip ${f.type}">${f.icon} ${f.label} ${f.impact}</span>`
-          ).join('')}
-        </div>
-      ` : '';
-
-      // Confidence bar
-      const confColor = arrival.confidence >= 85 ? 'var(--accent-green)'
-                       : arrival.confidence >= 70 ? 'var(--accent-amber)'
-                       : 'var(--accent-red)';
-      const confidenceBarHTML = `
-        <div class="confidence-bar">
-          <div class="confidence-bar__track">
-            <div class="confidence-bar__fill" style="width:${arrival.confidence}%;background:${confColor};"></div>
-          </div>
-          <span class="confidence-bar__label">${arrival.confidence}%</span>
-        </div>
-      `;
+      const crowdColor = crowdColors[arrival.occupancy] || '#888';
 
       const mlBadge = arrival.mlPowered
         ? `<span class="ml-badge">🧠 ML</span>`
         : '';
 
-      // Store the predicted time as a target
       const arrivalTime = Date.now() + arrival.predictedMin * 60 * 1000;
 
       card.innerHTML = `
-        <div class="arrival-card__recommend-tag">⭐ Best Option</div>
-        <div class="arrival-card__top">
-          <div class="arrival-card__route-info">
-            <span class="arrival-card__route-num" style="background:${arrival.routeColor}">${arrival.routeId}</span>
+        ${isRecommended ? '<div class="advice-card__best-tag">⭐ Best Option</div>' : ''}
+        <div class="advice-card__top">
+          <div class="advice-card__route-info">
+            <span class="advice-card__route-num" style="background:${arrival.routeColor}">${arrival.routeId}</span>
             <div>
-              <div class="arrival-card__dest">→ ${arrival.destination} ${mlBadge}</div>
-              <div class="arrival-card__vehicle">${arrival.vehicleId}</div>
+              <div class="advice-card__dest">→ ${arrival.destination} ${mlBadge}</div>
+              <div class="advice-card__vehicle">${arrival.vehicleId}</div>
             </div>
           </div>
-          <div class="arrival-card__time">
-            <div class="arrival-card__countdown" id="cd-${idx}" style="color:${arrival.routeColor}">
-              ${arrival.predictedMin}<span class="arrival-card__countdown-unit"> min</span>
+          <div class="advice-card__time">
+            <div class="advice-card__countdown" id="cd-${idx}" style="color:${arrival.routeColor}">
+              ${arrival.predictedMin}<span class="advice-card__countdown-unit"> min</span>
             </div>
           </div>
         </div>
-        <div class="arrival-card__bottom">
-          <span class="arrival-card__status ${arrival.status}">${statusLabel[arrival.status]}</span>
-          <span class="arrival-card__occupancy ${arrival.occupancy}">${occupancyIcon[arrival.occupancy]} ${arrival.occupancy}</span>
-          <span class="arrival-card__scheduled">Sched: ${arrival.scheduledMin}m</span>
+        <div class="advice-card__bottom">
+          <span class="advice-card__status ${arrival.status}">${statusLabel[arrival.status]}</span>
+          <span class="advice-card__crowd-badge" style="background:${crowdColor}20;color:${crowdColor};border:1px solid ${crowdColor}40">${arrival.occupancy}</span>
+          <span class="advice-card__scheduled">Sched: ${arrival.scheduledMin}m</span>
         </div>
-        ${confidenceBarHTML}
-        ${factorsHTML}
       `;
 
-      // Left border color
       card.style.borderLeftColor = arrival.routeColor;
       card.style.borderLeftWidth = '3px';
       card.style.borderLeftStyle = 'solid';
@@ -238,10 +403,9 @@ const UI = (() => {
             cdEl.innerHTML = `<span style="color:var(--accent-green)">Arriving!</span>`;
             clearInterval(interval);
           } else if (remaining <= 1) {
-            cdEl.innerHTML = `<span style="color:var(--accent-amber)">~1<span class="arrival-card__countdown-unit"> min</span></span>`;
-            cdEl.style.animation = 'countdownPulse 1s ease infinite';
+            cdEl.innerHTML = `<span style="color:var(--accent-amber)">~1<span class="advice-card__countdown-unit"> min</span></span>`;
           } else {
-            cdEl.innerHTML = `${remaining}<span class="arrival-card__countdown-unit"> min</span>`;
+            cdEl.innerHTML = `${remaining}<span class="advice-card__countdown-unit"> min</span>`;
           }
         }, 15000);
         countdownIntervals.push(interval);
@@ -261,13 +425,15 @@ const UI = (() => {
       if (info && info.initialized) {
         const arrMAE = info.arrivalModel?.mae ?? '--';
         const crowdAcc = info.crowdModel?.accuracy ?? '--';
+        const source = info.dataSource === 'hackathon_real' ? '🏆 Real Sivas Data' : '🔬 Synthetic';
+        const classes = info.crowdModel?.numClasses || 3;
         footer.innerHTML = `
           <div class="model-info__badge">
-            🧠 Random Forest ML · Trained on ${info.arrivalModel?.trainSamples || 0} samples
+            🧠 Random Forest ML · ${source} · ${info.arrivalModel?.trainSamples || 0} samples
           </div>
           <div>
             Arrival MAE: <span class="model-info__stat">${arrMAE} min</span> ·
-            Crowd Acc: <span class="model-info__stat">${crowdAcc}%</span>
+            Crowd Acc: <span class="model-info__stat">${crowdAcc}%</span> (${classes}-class)
           </div>
         `;
       }
@@ -298,6 +464,7 @@ const UI = (() => {
     showPanelContent,
     renderCrowd,
     renderArrivals,
+    renderAdvice,
     renderModelInfo,
     showArrivalsLoading,
     showCrowdLoading,

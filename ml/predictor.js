@@ -3,23 +3,56 @@
 
 const arrivalModel = require('./arrival-model');
 const crowdModel = require('./crowd-model');
+const { loadRealArrivalDataset, loadRealCrowdDataset } = require('./data-generator');
 
 let currentWeather = { temperature: 20, precipitation: 0, windSpeed: 10 };
 let isInitialized = false;
+let dataSource = 'synthetic';
 
 /**
  * Initialize and train all models
+ * @param {Object} pool - MySQL connection pool (optional, for real data training)
  */
-async function init() {
+async function init(pool) {
   console.log('\n🧠 Initializing ML models...');
   const start = Date.now();
 
-  arrivalModel.train();
-  crowdModel.train();
+  let usedRealData = false;
+
+  // Try to train on real hackathon data if pool is available
+  if (pool) {
+    try {
+      const [arrivalDataset, crowdDataset] = await Promise.all([
+        loadRealArrivalDataset(pool),
+        loadRealCrowdDataset(pool),
+      ]);
+
+      if (arrivalDataset && arrivalDataset.total > 100) {
+        arrivalModel.trainFromRealData(arrivalDataset);
+        usedRealData = true;
+      }
+
+      if (crowdDataset && crowdDataset.total > 100) {
+        crowdModel.trainFromRealData(crowdDataset);
+        usedRealData = true;
+      }
+    } catch (err) {
+      console.log(`   ⚠️ Real data loading failed: ${err.message}, falling back to synthetic`);
+    }
+  }
+
+  // Fallback to synthetic training if real data wasn't available
+  if (!usedRealData) {
+    arrivalModel.train();
+    crowdModel.train();
+    dataSource = 'synthetic';
+  } else {
+    dataSource = 'hackathon_real';
+  }
 
   isInitialized = true;
   const elapsed = ((Date.now() - start) / 1000).toFixed(1);
-  console.log(`🧠 All models ready in ${elapsed}s\n`);
+  console.log(`🧠 All models ready in ${elapsed}s (source: ${dataSource})\n`);
 }
 
 /**
@@ -79,7 +112,7 @@ function predictArrivals(stop, routes) {
     if (delayMin > 2) status = 'delayed';
     else if (delayMin < -0.5) status = 'early';
 
-    // Bus occupancy prediction (simplified from crowd model)
+    // Bus occupancy prediction
     const occCond = {
       hour, dayOfWeek, isRushHour,
       temperature: currentWeather.temperature,
@@ -87,7 +120,7 @@ function predictArrivals(stop, routes) {
       windSpeed: currentWeather.windSpeed,
       currentDelay: Math.max(0, delayMin),
       routeFrequency: 8,
-      stopPopularity: profile.popularity * 0.8, // vehicle is slightly different from stop
+      stopPopularity: profile.popularity * 0.8,
     };
     const occPred = crowdModel.predict(occCond);
 
@@ -95,7 +128,7 @@ function predictArrivals(stop, routes) {
       routeId: route.id,
       routeName: route.name,
       routeColor: route.color,
-      destination: route.name.split('–').pop() || route.name,
+      destination: route.name.split('–').pop() || route.name.split('-').pop() || route.name,
       scheduledMin,
       predictedMin,
       delayMin: parseFloat(delayMin.toFixed(1)),
@@ -111,9 +144,6 @@ function predictArrivals(stop, routes) {
 
 /**
  * Predict crowd level for a stop
- * @param {Object} stop - stop object with id, popularity, avg_delay
- * @param {Array} arrivals - current arrival predictions (for delay context)
- * @returns {Object} crowd prediction
  */
 function predictCrowd(stop, arrivals = []) {
   const now = new Date();
@@ -161,6 +191,7 @@ function predictCrowd(stop, arrivals = []) {
 function getModelInfo() {
   return {
     initialized: isInitialized,
+    dataSource,
     arrivalModel: {
       type: 'Random Forest Regressor',
       ...arrivalModel.getMetrics(),
@@ -177,7 +208,7 @@ function getModelInfo() {
         'hour', 'dayOfWeek', 'isRushHour', 'temperature', 'precipitation',
         'windSpeed', 'currentDelay', 'routeFrequency', 'stopPopularity',
       ],
-      classes: ['low', 'medium', 'high'],
+      classes: crowdModel.getLabels(),
     },
     currentWeather,
     lastUpdated: new Date().toISOString(),

@@ -76,6 +76,85 @@ async function initDatabase() {
     )
   `);
 
+  // ─── Hackathon Data Tables ──────────────────────────────────────────
+  await pool.execute(`
+    CREATE TABLE IF NOT EXISTS hackathon_trips (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      trip_id VARCHAR(30) NOT NULL,
+      line_id VARCHAR(10) NOT NULL,
+      line_name VARCHAR(100),
+      direction VARCHAR(20),
+      day_of_week INT,
+      is_weekend TINYINT,
+      time_of_day VARCHAR(20),
+      planned_departure TIME,
+      actual_departure TIME,
+      departure_delay_min DOUBLE,
+      planned_duration_min DOUBLE,
+      actual_duration_min DOUBLE,
+      weather_condition VARCHAR(30),
+      temperature_c DOUBLE,
+      precipitation_mm DOUBLE,
+      wind_speed_kmh DOUBLE,
+      traffic_level VARCHAR(20),
+      speed_factor DOUBLE,
+      num_stops INT,
+      avg_occupancy_pct DOUBLE,
+      bus_capacity INT DEFAULT 60,
+      INDEX idx_ht_line (line_id),
+      INDEX idx_ht_trip (trip_id)
+    )
+  `);
+
+  await pool.execute(`
+    CREATE TABLE IF NOT EXISTS hackathon_arrivals (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      arrival_id VARCHAR(30) NOT NULL,
+      trip_id VARCHAR(30) NOT NULL,
+      line_id VARCHAR(10) NOT NULL,
+      stop_id VARCHAR(30) NOT NULL,
+      stop_sequence INT,
+      scheduled_arrival TIME,
+      actual_arrival TIME,
+      delay_min DOUBLE,
+      passengers_waiting INT,
+      passengers_boarding INT,
+      passengers_alighting INT,
+      dwell_time_min DOUBLE,
+      cumulative_delay_min DOUBLE,
+      weather_condition VARCHAR(30),
+      temperature_c DOUBLE,
+      speed_factor DOUBLE,
+      minutes_to_next_bus DOUBLE,
+      INDEX idx_ha_stop (stop_id),
+      INDEX idx_ha_trip (trip_id),
+      INDEX idx_ha_line (line_id)
+    )
+  `);
+
+  await pool.execute(`
+    CREATE TABLE IF NOT EXISTS hackathon_passenger_flow (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      stop_id VARCHAR(30) NOT NULL,
+      line_id VARCHAR(10) NOT NULL,
+      stop_type VARCHAR(30),
+      hour_of_day INT,
+      day_of_week INT,
+      is_weekend TINYINT,
+      time_bucket VARCHAR(30),
+      weather_condition VARCHAR(30),
+      avg_passengers_waiting DOUBLE,
+      avg_passengers_boarding DOUBLE,
+      avg_dwell_time_min DOUBLE,
+      sample_count INT,
+      std_passengers_waiting DOUBLE,
+      max_passengers_waiting INT,
+      crowding_level VARCHAR(20),
+      INDEX idx_hpf_stop (stop_id),
+      INDEX idx_hpf_line (line_id)
+    )
+  `);
+
   // Seed if empty
   const [rows] = await pool.execute('SELECT COUNT(*) as count FROM cities');
   if (rows[0].count === 0) {
@@ -83,6 +162,12 @@ async function initDatabase() {
     await seedData(pool);
     console.log('   Database seeded.');
   }
+
+  // Ensure Sivas exists (may be missing on DBs seeded before Sivas was added)
+  await pool.execute(
+    'INSERT IGNORE INTO cities (name, lat, lng, zoom) VALUES (?, ?, ?, ?)',
+    ['Sivas', 39.7477, 37.0179, 13]
+  );
 }
 
 async function seedData(pool) {
@@ -93,6 +178,7 @@ async function seedData(pool) {
     ['Izmir',    38.4237, 27.1428, 13],
     ['Bursa',    40.1885, 29.0610, 13],
     ['Antalya',  36.8969, 30.7133, 13],
+    ['Sivas',    39.7477, 37.0179, 13],
   ];
 
   for (const [name, lat, lng, zoom] of cities) {

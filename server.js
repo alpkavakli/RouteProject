@@ -4,7 +4,9 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const predictor = require('./ml/predictor');
+const advisor = require('./ml/advisor');
 const { initDatabase } = require('./db/init');
+const { loadHackathonData } = require('./db/load-csv');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -425,6 +427,63 @@ app.get('/api/stops/:id/crowd', async (req, res) => {
   }
 });
 
+// ─── Smart Advice Endpoint ──────────────────────────────────────────────
+
+app.get('/api/stops/:id/advice', async (req, res) => {
+  try {
+    const stops = await queryStops({ id: req.params.id });
+    if (stops.length === 0) return res.status(404).json({ error: 'Stop not found' });
+    const stop = stops[0];
+
+    // Ensure weather is loaded
+    const [wRows] = await pool.execute(
+      `SELECT w.*, c.name AS city FROM weather w
+       JOIN cities c ON w.city_id = c.id
+       WHERE LOWER(c.name) = LOWER(?)
+       ORDER BY w.created_at DESC LIMIT 1`,
+      [stop.city]
+    );
+    if (wRows.length > 0) {
+      predictor.setWeather({ temp: wRows[0].temp, precipitation: wRows[0].precipitation, windSpeed: wRows[0].wind_speed });
+    } else {
+      predictor.setWeather(generateRandomWeather(stop.city));
+    }
+
+    const routes = await queryRoutes({ city: stop.city });
+    const arrivals = predictor.predictArrivals(stop, routes);
+    const crowd = predictor.predictCrowd(stop, arrivals);
+
+    const advice = await advisor.generateAdvice(stop, arrivals, crowd, pool, routes);
+    res.json(advice);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Hackathon Stats ────────────────────────────────────────────────────
+
+app.get('/api/hackathon/stats', async (req, res) => {
+  try {
+    const [[trips]] = await pool.execute('SELECT COUNT(*) as cnt FROM hackathon_trips');
+    const [[arrivals]] = await pool.execute('SELECT COUNT(*) as cnt FROM hackathon_arrivals');
+    const [[flow]] = await pool.execute('SELECT COUNT(*) as cnt FROM hackathon_passenger_flow');
+    const [[sivasStops]] = await pool.execute(
+      `SELECT COUNT(*) as cnt FROM stops s JOIN cities c ON s.city_id = c.id WHERE LOWER(c.name) = 'sivas'`
+    );
+
+    res.json({
+      loaded: trips.cnt > 0,
+      trips: trips.cnt,
+      arrivals: arrivals.cnt,
+      passengerFlow: flow.cnt,
+      sivasStops: sivasStops.cnt,
+      dataSource: predictor.getModelInfo().dataSource,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ML model info endpoint
 app.get('/api/model/info', (req, res) => {
   res.json(predictor.getModelInfo());
@@ -443,11 +502,26 @@ async function start() {
   pool = require('./db/connection');
   console.log('📦 Database ready.\n');
 
-  await predictor.init();
+  // Load hackathon CSV data if not already loaded
+  await loadHackathonData(pool);
+
+  // Delete model cache to force retraining on real data
+  const fs = require('fs');
+  const cachePath = require('path').join(__dirname, 'ml', 'cache');
+  try {
+    if (fs.existsSync(cachePath)) {
+      const files = fs.readdirSync(cachePath);
+      for (const f of files) fs.unlinkSync(require('path').join(cachePath, f));
+    }
+  } catch (e) {}
+
+  // Train ML models (will use real data if hackathon data is loaded)
+  await predictor.init(pool);
 
   app.listen(PORT, () => {
     console.log(`🚌 PREDICTIVE TRANSIT server running on http://localhost:${PORT}`);
     console.log(`📊 Model info: http://localhost:${PORT}/api/model/info`);
+    console.log(`💡 Advice:     http://localhost:${PORT}/api/stops/STP-L01-04/advice`);
   });
 }
 

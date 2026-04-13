@@ -234,4 +234,143 @@ module.exports = {
   generateArrivalSample,
   generateCrowdSample,
   STOP_PROFILES,
+  loadRealArrivalDataset,
+  loadRealCrowdDataset,
 };
+
+// ─── Real Data Loaders (Hackathon) ──────────────────────────────────────
+
+/**
+ * Load real arrival training data from hackathon_arrivals + hackathon_trips
+ * Features match the synthetic format so the same model architecture works.
+ */
+async function loadRealArrivalDataset(pool) {
+  const [rows] = await pool.execute(`
+    SELECT
+      a.stop_sequence,
+      a.delay_min,
+      a.passengers_waiting,
+      a.passengers_boarding,
+      a.passengers_alighting,
+      a.dwell_time_min,
+      a.cumulative_delay_min,
+      a.speed_factor,
+      a.minutes_to_next_bus,
+      a.weather_condition,
+      t.day_of_week,
+      t.is_weekend,
+      t.departure_delay_min,
+      t.temperature_c,
+      t.precipitation_mm,
+      t.wind_speed_kmh,
+      t.avg_occupancy_pct,
+      t.planned_duration_min,
+      HOUR(a.scheduled_arrival) as hour_of_day
+    FROM hackathon_arrivals a
+    JOIN hackathon_trips t ON a.trip_id = t.trip_id
+    ORDER BY RAND()
+  `);
+
+  if (rows.length === 0) return null;
+
+  const X = [];
+  const y = [];
+
+  for (const r of rows) {
+    const hour = r.hour_of_day || 12;
+    const dayOfWeek = r.day_of_week || 0;
+    const isWeekday = dayOfWeek >= 1 && dayOfWeek <= 5;
+    const isRushHour = isWeekday && ((hour >= 7 && hour <= 9) || (hour >= 17 && hour <= 19));
+
+    const features = [
+      hour / 23,
+      dayOfWeek / 6,
+      isRushHour ? 1 : 0,
+      (r.temperature_c || 20) / 40,
+      (r.precipitation_mm || 0) / 80,
+      (r.wind_speed_kmh || 10) / 45,
+      (r.planned_duration_min || 30) / 60,  // normalized planned duration
+      Math.min(1, (r.passengers_waiting || 0) / 150),  // stop popularity proxy
+      (r.departure_delay_min || 0) / 10,  // route avg delay proxy
+      (r.cumulative_delay_min || 0) / 15,  // recent delay
+      (r.stop_sequence || 5) / 16,  // segment index (max 16 stops)
+    ];
+
+    X.push(features);
+    y.push(r.delay_min || 0);
+  }
+
+  // 80/20 split
+  const splitIdx = Math.floor(X.length * 0.8);
+  return {
+    train: { X: X.slice(0, splitIdx), y: y.slice(0, splitIdx) },
+    test: { X: X.slice(splitIdx), y: y.slice(splitIdx) },
+    total: X.length,
+  };
+}
+
+/**
+ * Load real crowd training data from hackathon_passenger_flow
+ * Maps 5-class crowding levels to numeric labels: empty=0, light=1, moderate=2, busy=3, crowded=4
+ */
+async function loadRealCrowdDataset(pool) {
+  const CROWD_MAP = { empty: 0, light: 1, moderate: 2, busy: 3, crowded: 4 };
+
+  const [rows] = await pool.execute(`
+    SELECT
+      hour_of_day,
+      day_of_week,
+      is_weekend,
+      weather_condition,
+      avg_passengers_waiting,
+      avg_passengers_boarding,
+      avg_dwell_time_min,
+      std_passengers_waiting,
+      crowding_level,
+      stop_type
+    FROM hackathon_passenger_flow
+    ORDER BY RAND()
+  `);
+
+  if (rows.length === 0) return null;
+
+  const X = [];
+  const y = [];
+
+  // Weather encoding
+  const WEATHER_MAP = { clear: 0, cloudy: 0.2, fog: 0.4, wind: 0.5, rain: 0.7, snow: 0.9 };
+
+  for (const r of rows) {
+    const hour = r.hour_of_day || 12;
+    const dayOfWeek = r.day_of_week || 0;
+    const isWeekday = !r.is_weekend;
+    const isRushHour = isWeekday && ((hour >= 7 && hour <= 9) || (hour >= 17 && hour <= 19));
+
+    const label = CROWD_MAP[r.crowding_level];
+    if (label === undefined) continue;
+
+    const features = [
+      hour / 23,
+      dayOfWeek / 6,
+      isRushHour ? 1 : 0,
+      (WEATHER_MAP[r.weather_condition] || 0),  // encoded weather
+      Math.min(1, (r.avg_passengers_waiting || 0) / 150),  // normalized waiting
+      Math.min(1, (r.avg_passengers_boarding || 0) / 100),  // normalized boarding
+      (r.avg_dwell_time_min || 1) / 3,  // normalized dwell time
+      Math.min(1, (r.std_passengers_waiting || 0) / 50),  // variability
+      r.stop_type === 'terminal' ? 1 : r.stop_type === 'university' ? 0.8 : r.stop_type === 'hospital' ? 0.7 : 0.4,
+    ];
+
+    X.push(features);
+    y.push(label);
+  }
+
+  // 80/20 split
+  const splitIdx = Math.floor(X.length * 0.8);
+  return {
+    train: { X: X.slice(0, splitIdx), y: y.slice(0, splitIdx) },
+    test: { X: X.slice(splitIdx), y: y.slice(splitIdx) },
+    total: X.length,
+    numClasses: 5,
+  };
+}

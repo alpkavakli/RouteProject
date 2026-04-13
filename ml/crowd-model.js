@@ -1,5 +1,6 @@
 // ─── Crowd Estimation Model ─────────────────────────────────────────────
-// Random Forest Classifier for predicting stop crowd level (low/medium/high)
+// Random Forest Classifier for predicting stop crowd level
+// Supports both 3-class (synthetic) and 5-class (hackathon real data)
 
 const fs = require('fs');
 const path = require('path');
@@ -15,10 +16,14 @@ const FEATURE_NAMES = [
   'windSpeed', 'currentDelay', 'routeFrequency', 'stopPopularity',
 ];
 
-const LABELS = ['low', 'medium', 'high'];
+// 5-class labels (hackathon data)
+const LABELS_5 = ['empty', 'light', 'moderate', 'busy', 'crowded'];
+// 3-class labels (synthetic fallback)
+const LABELS_3 = ['low', 'medium', 'high'];
 
 let model = null;
 let trainMetrics = null;
+let activeLabels = LABELS_3; // default to 3-class, updated on training
 
 /**
  * Try to load cached model, otherwise train from scratch
@@ -36,7 +41,8 @@ function loadFromCache() {
     const metricsJson = JSON.parse(fs.readFileSync(METRICS_PATH, 'utf8'));
     model = RandomForestClassifier.load(modelJson);
     trainMetrics = metricsJson;
-    console.log(`   ✅ Crowd model loaded from cache — Accuracy: ${trainMetrics.accuracy}%`);
+    activeLabels = metricsJson.numClasses === 5 ? LABELS_5 : LABELS_3;
+    console.log(`   ✅ Crowd model loaded from cache — Accuracy: ${trainMetrics.accuracy}% (${activeLabels.length}-class)`);
     return true;
   } catch (err) {
     console.log(`   ⚠️ Cache load failed: ${err.message}, retraining...`);
@@ -55,11 +61,12 @@ function saveToCache() {
 }
 
 function trainFresh() {
-  console.log('   Training crowd estimation model...');
+  console.log('   Training crowd estimation model (3-class synthetic)...');
   const start = Date.now();
 
   const { X: trainX, y: trainY } = generateCrowdDataset(2000);
   const { X: testX, y: testY } = generateCrowdDataset(400);
+  activeLabels = LABELS_3;
 
   model = new RandomForestClassifier({
     nEstimators: 40,
@@ -73,7 +80,8 @@ function trainFresh() {
 
   const predictions = model.predict(testX);
   let correct = 0;
-  const confusion = [[0,0,0],[0,0,0],[0,0,0]];
+  const numClasses = 3;
+  const confusion = Array.from({ length: numClasses }, () => Array(numClasses).fill(0));
 
   for (let i = 0; i < testY.length; i++) {
     if (predictions[i] === testY[i]) correct++;
@@ -83,7 +91,7 @@ function trainFresh() {
   const accuracy = (correct / testY.length) * 100;
   const elapsed = ((Date.now() - start) / 1000).toFixed(1);
 
-  const classMetrics = LABELS.map((label, idx) => {
+  const classMetrics = activeLabels.map((label, idx) => {
     const tp = confusion[idx][idx];
     const fp = confusion.reduce((sum, row, r) => sum + (r !== idx ? row[idx] : 0), 0);
     const fn = confusion[idx].reduce((sum, val, c) => sum + (c !== idx ? val : 0), 0);
@@ -99,15 +107,75 @@ function trainFresh() {
     testSamples: testX.length,
     nEstimators: 40,
     trainingTime: `${elapsed}s`,
+    numClasses: 3,
   };
 
   console.log(`   ✅ Crowd model trained in ${elapsed}s — Accuracy: ${trainMetrics.accuracy}%`);
 }
 
 /**
+ * Train on real 5-class hackathon data
+ */
+function trainFromRealData(dataset) {
+  console.log(`   Training crowd model on ${dataset.total} real flow records (5-class)...`);
+  const start = Date.now();
+  activeLabels = LABELS_5;
+
+  // Clear cache
+  try { if (fs.existsSync(MODEL_PATH)) fs.unlinkSync(MODEL_PATH); } catch (e) {}
+  try { if (fs.existsSync(METRICS_PATH)) fs.unlinkSync(METRICS_PATH); } catch (e) {}
+
+  model = new RandomForestClassifier({
+    nEstimators: 50,
+    maxFeatures: 0.7,
+    replacement: true,
+    seed: 42,
+    useSampleBagging: true,
+  });
+
+  model.train(dataset.train.X, dataset.train.y);
+
+  const predictions = model.predict(dataset.test.X);
+  let correct = 0;
+  const numClasses = 5;
+  const confusion = Array.from({ length: numClasses }, () => Array(numClasses).fill(0));
+
+  for (let i = 0; i < dataset.test.y.length; i++) {
+    if (predictions[i] === dataset.test.y[i]) correct++;
+    if (dataset.test.y[i] < numClasses && predictions[i] < numClasses) {
+      confusion[dataset.test.y[i]][predictions[i]]++;
+    }
+  }
+
+  const accuracy = (correct / dataset.test.y.length) * 100;
+  const elapsed = ((Date.now() - start) / 1000).toFixed(1);
+
+  const classMetrics = activeLabels.map((label, idx) => {
+    const tp = confusion[idx][idx];
+    const fp = confusion.reduce((sum, row, r) => sum + (r !== idx ? row[idx] : 0), 0);
+    const fn = confusion[idx].reduce((sum, val, c) => sum + (c !== idx ? val : 0), 0);
+    const precision = tp + fp > 0 ? ((tp / (tp + fp)) * 100).toFixed(1) : '0.0';
+    const recall = tp + fn > 0 ? ((tp / (tp + fn)) * 100).toFixed(1) : '0.0';
+    return { label, precision: parseFloat(precision), recall: parseFloat(recall) };
+  });
+
+  trainMetrics = {
+    accuracy: parseFloat(accuracy.toFixed(1)),
+    classMetrics,
+    trainSamples: dataset.train.X.length,
+    testSamples: dataset.test.X.length,
+    nEstimators: 50,
+    trainingTime: `${elapsed}s`,
+    numClasses: 5,
+    dataSource: 'hackathon_real',
+  };
+
+  saveToCache();
+  console.log(`   ✅ Crowd model trained on REAL data in ${elapsed}s — Accuracy: ${trainMetrics.accuracy}% (5-class)`);
+}
+
+/**
  * Predict crowd level for given conditions
- * @param {Object} conditions - { hour, dayOfWeek, isRushHour, temperature, precipitation, windSpeed, currentDelay, routeFrequency, stopPopularity }
- * @returns {{ level, estimatedCount, confidence, reason, trend }}
  */
 function predict(conditions) {
   if (!model) throw new Error('Model not trained');
@@ -125,23 +193,26 @@ function predict(conditions) {
   ];
 
   const prediction = model.predict([features])[0];
-  const level = LABELS[prediction];
+  const level = activeLabels[prediction] || activeLabels[0];
 
   // Get class probabilities from tree votes
   const treePredictions = model.estimators.map(tree => {
     return tree.predict([features])[0];
   });
 
-  const votes = [0, 0, 0];
-  treePredictions.forEach(p => votes[p]++);
+  const votes = Array(activeLabels.length).fill(0);
+  treePredictions.forEach(p => { if (p < votes.length) votes[p]++; });
   const total = treePredictions.length;
   const probabilities = votes.map(v => parseFloat(((v / total) * 100).toFixed(1)));
 
-  const confidence = Math.round(probabilities[prediction]);
+  const confidence = Math.round(probabilities[prediction] || 50);
 
   // Estimated count based on level
-  const countRanges = { low: [2, 10], medium: [12, 28], high: [30, 55] };
-  const range = countRanges[level];
+  const countRanges = {
+    empty: [0, 3], light: [3, 12], moderate: [12, 28], busy: [28, 45], crowded: [45, 80],
+    low: [2, 10], medium: [12, 28], high: [30, 55],
+  };
+  const range = countRanges[level] || [5, 20];
   const estimatedCount = Math.round(range[0] + (range[1] - range[0]) * (confidence / 100));
 
   // Generate reason
@@ -155,11 +226,15 @@ function predict(conditions) {
   else if (hour >= 16 && hour <= 17) trend = 'rising';
   else if (hour >= 19 && hour <= 21) trend = 'falling';
 
+  // Build probability object
+  const probObj = {};
+  activeLabels.forEach((label, i) => { probObj[label] = probabilities[i]; });
+
   return {
     level,
     estimatedCount,
     confidence,
-    probabilities: { low: probabilities[0], medium: probabilities[1], high: probabilities[2] },
+    probabilities: probObj,
     reason,
     trend,
   };
@@ -174,9 +249,17 @@ function generateReason(cond, level) {
   if (cond.stopPopularity > 0.8) parts.push('high-demand stop');
 
   if (parts.length === 0) {
-    if (level === 'low') parts.push('off-peak period, favorable conditions');
-    else if (level === 'medium') parts.push('moderate passenger demand');
-    else parts.push('multiple congestion factors');
+    const reasons = {
+      empty: 'very low passenger activity',
+      light: 'low passenger volume, off-peak',
+      low: 'off-peak period, favorable conditions',
+      moderate: 'moderate passenger demand',
+      medium: 'moderate passenger demand',
+      busy: 'above average passenger volume',
+      high: 'multiple congestion factors',
+      crowded: 'very high passenger concentration',
+    };
+    parts.push(reasons[level] || 'typical conditions');
   }
 
   return parts.join(', ').replace(/^./, c => c.toUpperCase());
@@ -186,4 +269,8 @@ function getMetrics() {
   return trainMetrics;
 }
 
-module.exports = { train, predict, getMetrics, LABELS };
+function getLabels() {
+  return activeLabels;
+}
+
+module.exports = { train, predict, getMetrics, trainFromRealData, getLabels, LABELS_5, LABELS_3 };

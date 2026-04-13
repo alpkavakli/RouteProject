@@ -178,4 +178,56 @@ function getMetrics() {
   return trainMetrics;
 }
 
-module.exports = { train, predict, getMetrics };
+/**
+ * Train on real hackathon data (pre-split dataset)
+ */
+function trainFromRealData(dataset) {
+  console.log(`   Training arrival model on ${dataset.total} real observations...`);
+  const start = Date.now();
+
+  // Clear cache so next load uses this model
+  try { if (fs.existsSync(MODEL_PATH)) fs.unlinkSync(MODEL_PATH); } catch (e) {}
+  try { if (fs.existsSync(METRICS_PATH)) fs.unlinkSync(METRICS_PATH); } catch (e) {}
+
+  model = new RandomForestRegression({
+    nEstimators: 50,
+    maxFeatures: 0.7,
+    replacement: true,
+    seed: 42,
+    useSampleBagging: true,
+  });
+
+  model.train(dataset.train.X, dataset.train.y);
+
+  const predictions = model.predict(dataset.test.X);
+  let totalError = 0;
+  let within1 = 0;
+  let within2 = 0;
+
+  for (let i = 0; i < dataset.test.y.length; i++) {
+    const error = Math.abs(predictions[i] - dataset.test.y[i]);
+    totalError += error;
+    if (error <= 1) within1++;
+    if (error <= 2) within2++;
+  }
+
+  const mae = totalError / dataset.test.y.length;
+  const elapsed = ((Date.now() - start) / 1000).toFixed(1);
+
+  trainMetrics = {
+    mae: parseFloat(mae.toFixed(2)),
+    within1Min: parseFloat(((within1 / dataset.test.y.length) * 100).toFixed(1)),
+    within2Min: parseFloat(((within2 / dataset.test.y.length) * 100).toFixed(1)),
+    trainSamples: dataset.train.X.length,
+    testSamples: dataset.test.X.length,
+    nEstimators: 50,
+    trainingTime: `${elapsed}s`,
+    dataSource: 'hackathon_real',
+  };
+
+  saveToCache();
+  console.log(`   ✅ Arrival model trained on REAL data in ${elapsed}s — MAE: ${trainMetrics.mae} min, within 2 min: ${trainMetrics.within2Min}%`);
+}
+
+module.exports = { train, predict, getMetrics, trainFromRealData };
+

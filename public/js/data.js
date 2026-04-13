@@ -30,6 +30,16 @@ const DataService = {
     return res.json();
   },
 
+  async getAdvice(stopId) {
+    const res = await fetch(`${API_BASE}/api/stops/${stopId}/advice`);
+    return res.json();
+  },
+
+  async getHackathonStats() {
+    const res = await fetch(`${API_BASE}/api/hackathon/stats`);
+    return res.json();
+  },
+
   async getRoutes(city) {
     const url = city ? `${API_BASE}/api/routes?city=${city}` : `${API_BASE}/api/routes`;
     const res = await fetch(url);

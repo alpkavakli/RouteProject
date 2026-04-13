@@ -892,11 +892,295 @@
 }
 
 /* Staggered entrance */
-.arrival-card:nth-child(1) { animation-delay: 0ms; }
-.arrival-card:nth-child(2) { animation-delay: 60ms; }
-.arrival-card:nth-child(3) { animation-delay: 120ms; }
-.arrival-card:nth-child(4) { animation-delay: 180ms; }
-.arrival-card:nth-child(5) { animation-delay: 240ms; }
+.arrival-card:nth-child(1),
+.advice-card:nth-child(1) { animation-delay: 0ms; }
+.arrival-card:nth-child(2),
+.advice-card:nth-child(2) { animation-delay: 60ms; }
+.arrival-card:nth-child(3),
+.advice-card:nth-child(3) { animation-delay: 120ms; }
+.arrival-card:nth-child(4),
+.advice-card:nth-child(4) { animation-delay: 180ms; }
+.arrival-card:nth-child(5),
+.advice-card:nth-child(5) { animation-delay: 240ms; }
+
+/* ─── Smart Advice Cards ─────────────────────────────────────────────── */
+.advice-card {
+  background: var(--bg-card);
+  border-radius: var(--radius-lg);
+  padding: var(--sp-md);
+  margin-bottom: var(--sp-sm);
+  border: 1px solid var(--border-subtle);
+  transition: all var(--transition-base);
+  position: relative;
+  overflow: hidden;
+}
+
+.advice-card:hover {
+  border-color: var(--border-light);
+}
+
+.advice-card.recommended {
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 16px var(--accent-blue-glow);
+}
+
+.advice-card__best-tag {
+  position: absolute;
+  top: 0;
+  right: var(--sp-md);
+  background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+  color: white;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  padding: 3px 12px 5px;
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  z-index: 2;
+}
+
+.advice-card__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-sm);
+  margin-bottom: var(--sp-sm);
+}
+
+.advice-card__route-info {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+  min-width: 0;
+}
+
+.advice-card__route-num {
+  padding: 4px 11px;
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-bold);
+  color: white;
+  min-width: 44px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.advice-card__dest {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.advice-card__vehicle {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.advice-card__time { text-align: right; }
+
+.advice-card__countdown {
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-bold);
+  line-height: 1;
+}
+
+.advice-card__countdown-unit {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-normal);
+  color: var(--text-secondary);
+}
+
+/* Metrics grid */
+.advice-card__metrics {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr 1fr 1fr;
+  gap: var(--sp-sm);
+  padding: var(--sp-sm) 0;
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+  margin-bottom: var(--sp-sm);
+}
+
+.advice-card__metric {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.advice-card__metric-label {
+  font-size: 10px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: var(--fw-semibold);
+}
+
+.advice-card__crowd-badge {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: var(--radius-full);
+  font-size: 11px;
+  font-weight: var(--fw-semibold);
+  text-align: center;
+  text-transform: capitalize;
+  width: fit-content;
+}
+
+/* Occupancy bar */
+.occupancy-bar {
+  width: 100%;
+  height: 6px;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+  margin-top: 2px;
+}
+
+.occupancy-bar__fill {
+  height: 100%;
+  border-radius: var(--radius-full);
+  transition: width var(--transition-slow);
+}
+
+.occupancy-pct {
+  font-size: 10px;
+  color: var(--text-secondary);
+  font-weight: var(--fw-semibold);
+  margin-top: 2px;
+}
+
+/* Stress badge */
+.stress-badge {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: var(--radius-full);
+  font-size: 11px;
+  font-weight: var(--fw-semibold);
+  width: fit-content;
+}
+
+/* Bottom meta row */
+.advice-card__bottom {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+  flex-wrap: wrap;
+  margin-bottom: var(--sp-sm);
+}
+
+.advice-card__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: var(--radius-full);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+}
+
+.advice-card__status.on-time { background: var(--status-ontime-bg); color: var(--status-ontime); }
+.advice-card__status.delayed { background: var(--status-delayed-bg); color: var(--status-delayed); }
+.advice-card__status.early { background: var(--status-early-bg); color: var(--status-early); }
+
+.advice-card__scheduled,
+.advice-card__next {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.advice-card__next {
+  margin-left: auto;
+  color: var(--text-secondary);
+  font-weight: var(--fw-medium);
+}
+
+/* Seat turnover note */
+.advice-card__turnover {
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+  background: rgba(79, 140, 255, 0.08);
+  border-left: 3px solid var(--accent-blue);
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  margin-bottom: var(--sp-sm);
+}
+
+/* Recommendation chip — the headline action */
+.recommendation-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  line-height: 1.35;
+}
+
+.recommendation-chip__icon { font-size: 18px; flex-shrink: 0; }
+.recommendation-chip__text { flex: 1; }
+
+/* Last bus / run badges */
+.last-bus-badge,
+.run-badge {
+  position: absolute;
+  top: var(--sp-sm);
+  left: var(--sp-md);
+  padding: 3px 9px;
+  border-radius: var(--radius-full);
+  font-size: 10px;
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.3px;
+  z-index: 2;
+  animation: countdownPulse 1.6s ease infinite;
+}
+
+.last-bus-badge {
+  background: rgba(153, 27, 27, 0.2);
+  color: #fca5a5;
+  border: 1px solid rgba(153, 27, 27, 0.5);
+}
+
+.run-badge {
+  background: rgba(239, 68, 68, 0.2);
+  color: #fca5a5;
+  border: 1px solid rgba(239, 68, 68, 0.5);
+}
+
+/* Global advice banner */
+.global-advice {
+  padding: 12px 14px;
+  margin-bottom: var(--sp-md);
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.12), rgba(79, 140, 255, 0.12));
+  border: 1px solid rgba(139, 92, 246, 0.25);
+}
+
+.global-advice__text {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+  line-height: 1.4;
+}
+
+/* Factors (alias existing .arrival-card__factors spacing for advice) */
+.advice-card__factors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: var(--sp-sm);
+}
+
+/* Narrow viewport: collapse metrics to 2 columns */
+@media (max-width: 520px) {
+  .advice-card__metrics {
+    grid-template-columns: 1fr 1fr;
+  }
+}
 
 /* ─── Responsive ─────────────────────────────────────────────────────── */
 @media (max-width: 860px) {

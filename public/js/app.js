@@ -95,26 +95,53 @@
     UI.showArrivalsLoading();
     UI.showCrowdLoading();
 
-    // Fetch data
-    const [arrivals, crowd] = await Promise.all([
-      DataService.getArrivals(stopId),
-      DataService.getCrowd(stopId),
-    ]);
+    // Use advice endpoint for Sivas (hackathon data), fallback for others
+    const isSivas = currentCity && currentCity.toLowerCase() === 'sivas';
 
-    UI.renderArrivals(arrivals);
-    UI.renderCrowd(crowd);
+    if (isSivas) {
+      try {
+        const advice = await DataService.getAdvice(stopId);
+        UI.renderAdvice(advice);
+        if (advice.crowd) {
+          UI.renderCrowd(advice.crowd);
+        }
+      } catch (err) {
+        // Fallback to regular endpoints
+        const [arrivals, crowd] = await Promise.all([
+          DataService.getArrivals(stopId),
+          DataService.getCrowd(stopId),
+        ]);
+        UI.renderArrivals(arrivals);
+        UI.renderCrowd(crowd);
+      }
+    } else {
+      const [arrivals, crowd] = await Promise.all([
+        DataService.getArrivals(stopId),
+        DataService.getCrowd(stopId),
+      ]);
+      UI.renderArrivals(arrivals);
+      UI.renderCrowd(crowd);
+    }
 
     // Auto-refresh every 30s
     if (refreshInterval) clearInterval(refreshInterval);
     refreshInterval = setInterval(async () => {
       const selId = MapController.getSelectedStopId();
       if (selId) {
-        const [arr, crd] = await Promise.all([
-          DataService.getArrivals(selId),
-          DataService.getCrowd(selId),
-        ]);
-        UI.renderArrivals(arr);
-        UI.renderCrowd(crd);
+        if (isSivas) {
+          try {
+            const advice = await DataService.getAdvice(selId);
+            UI.renderAdvice(advice);
+            if (advice.crowd) UI.renderCrowd(advice.crowd);
+          } catch (e) {}
+        } else {
+          const [arr, crd] = await Promise.all([
+            DataService.getArrivals(selId),
+            DataService.getCrowd(selId),
+          ]);
+          UI.renderArrivals(arr);
+          UI.renderCrowd(crd);
+        }
       }
     }, 30000);
   }
