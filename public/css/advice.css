@@ -1,0 +1,248 @@
+/* ─── Advice Card Components ─────────────────────────────────────────── */
+
+.advice-card {
+  background: var(--bg-secondary);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  margin-bottom: 12px;
+  border-left: 3px solid var(--accent-blue);
+  box-shadow: var(--shadow-sm);
+  position: relative;
+  transition: transform var(--transition-normal);
+  overflow: hidden;
+}
+
+.advice-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.advice-card.recommended {
+  background: linear-gradient(to bottom right, var(--bg-secondary), rgba(79, 140, 255, 0.05));
+  border: 1px solid rgba(79, 140, 255, 0.2);
+  border-left: 4px solid var(--accent-blue);
+}
+
+.advice-card__best-tag {
+  position: absolute;
+  top: 0;
+  right: 0;
+  background: var(--accent-blue);
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-bottom-left-radius: var(--radius-md);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.advice-card__top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
+.advice-card__route-info {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.advice-card__route-num {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  color: white;
+  font-weight: 700;
+  font-size: var(--fs-md);
+}
+
+.advice-card__dest {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+
+.advice-card__vehicle {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+.advice-card__time {
+  text-align: right;
+}
+
+.advice-card__countdown {
+  font-size: 24px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.advice-card__countdown-unit {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* ─── Metrics Grid ─────────────────────────────────────────────────── */
+.advice-card__metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 12px;
+  background: rgba(0,0,0,0.02);
+  padding: 10px;
+  border-radius: var(--radius-md);
+}
+
+.advice-card__metric {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.advice-card__metric-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.occupancy-bar {
+  height: 6px;
+  background: var(--border-subtle);
+  border-radius: 3px;
+  overflow: hidden;
+  position: relative;
+}
+
+.occupancy-bar__fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 1s ease-out;
+}
+
+.occupancy-pct {
+  font-size: 11px;
+  font-weight: 600;
+  margin-top: 2px;
+}
+
+.stress-badge, .advice-card__crowd-badge {
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  width: fit-content;
+}
+
+/* ─── Recommendation Chip ───────────────────────────────────────────── */
+.recommendation-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  margin-top: 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.recommendation-chip__icon {
+  font-size: 18px;
+}
+
+/* ─── Extras ───────────────────────────────────────────────────────── */
+.advice-card__turnover {
+  font-size: 11px;
+  color: var(--accent-blue);
+  background: rgba(79, 140, 255, 0.1);
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  margin-bottom: 8px;
+  font-weight: 500;
+}
+
+.advice-card__factors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.factor-chip {
+  font-size: 10px;
+  padding: 2px 6px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+}
+
+.advice-card__bottom {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 8px;
+}
+
+.last-bus-badge {
+  position: absolute;
+  top: 10px;
+  left: 55px;
+  background: var(--accent-red);
+  color: white;
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-weight: 700;
+  animation: pulse 2s infinite;
+}
+
+.run-badge {
+  position: absolute;
+  top: 10px;
+  left: 55px;
+  background: #f97316;
+  color: white;
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-weight: 700;
+}
+
+.global-advice {
+  background: var(--bg-tertiary);
+  border: 1px dashed var(--accent-blue);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  margin-bottom: 16px;
+}
+
+.global-advice__text {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent-blue);
+  text-align: center;
+}
+
+@keyframes pulse {
+  0% { opacity: 1; }
+  50% { opacity: 0.6; }
+  100% { opacity: 1; }
+}
+
+@keyframes countdownPulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}

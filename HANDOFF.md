@@ -59,3 +59,19 @@ Hero: big countdown + recommendation chip. That's the 1-second takeaway. Everyth
 - User prefers terse output, direct answers, no preambles.
 - Before making risky changes (destructive git, forced rebuilds that lose DB state), confirm first.
 - When in doubt about scope: "simple and complete" beats "complex and half-working." This is an explicit hackathon strategy rule for this project.
+
+## I added (teammate 1) this previous prompt to give an idea to what to do next:
+Saved. The Q&A context is now in memory and will shape suggestions in        future sessions.
+                                                                               Three things worth flagging before we move on:
+                                                                             
+  1. Our current system is already well-aligned with the rubric — real data,
+  real ML, real UX, deterministic outputs, a unique "advice/stress" angle    
+  most teams won't have. The risk now is not doing more but polishing
+  less-visible things (documentation, demo narrative).
+  2. Documentation is load-bearing and we're thin on it. DOCUMENTATION.md    
+  exists from an earlier commit, but post-advisor work hasn't been reflected.
+   Before 04-20 I'd recommend one tight README update: what the system does  
+  in 3 sentences, how to run it, what the advice engine signals mean.        
+  3. The stability fix is still uncommitted. Want me to commit + push that   
+  first (small, focused commit), then we decide on next moves (docs, external
+   data, demo polish)?

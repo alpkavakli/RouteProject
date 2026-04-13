@@ -18,5 +18,8 @@
     "ml-cart": "^2.1.1",
     "ml-random-forest": "^2.1.0",
     "mysql2": "^3.20.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14"
   }
 }

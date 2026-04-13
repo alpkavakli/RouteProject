@@ -515,7 +515,7 @@ async function start() {
       const files = fs.readdirSync(cachePath);
       for (const f of files) fs.unlinkSync(require('path').join(cachePath, f));
     }
-  } catch (e) {}
+  } catch (e) { }
 
   // Train ML models (will use real data if hackathon data is loaded)
   await predictor.init(pool);
