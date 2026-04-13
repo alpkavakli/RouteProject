@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(timeout 60 node -e ':*)",
+      "Bash(mysql:*)",
+      "Bash(pkill -f \"node server\")",
+      "Bash(node -e ':*)",
+      "Bash(pkill -f \"node\")",
+      "Bash(curl:*)",
+      "Bash(taskkill //F //PID 25896)",
+      "Bash(netstat -ano)",
+      "Bash(taskkill:*)",
+      "Bash(node:*)",
+      "Bash(docker compose up:*)",
+      "Bash(docker compose logs:*)"
+    ]
+  }
+}
