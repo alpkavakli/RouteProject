@@ -157,7 +157,9 @@ const UI = (() => {
     if (!adviceData || !adviceData.options) return;
 
     const options = adviceData.options;
-    const bestIdx = adviceData.bestOption || 0;
+    const bestIdx = (typeof adviceData.bestOption === 'number' && adviceData.bestOption >= 0)
+      ? adviceData.bestOption
+      : -1;
 
     document.getElementById('arrivalCount').textContent = `${options.length} buses`;
 
@@ -245,9 +247,15 @@ const UI = (() => {
             </div>
           </div>
           <div class="advice-card__time">
-            <div class="advice-card__countdown" id="cd-${idx}" style="color:${opt.routeColor}">
-              ${opt.predictedMin}<span class="advice-card__countdown-unit"> dk</span>
-            </div>
+            ${opt.serviceEnded ? `
+              <div class="advice-card__countdown advice-card__countdown--ended" style="color:#8b5cf6">
+                🌙 <span class="advice-card__countdown-unit">yarın</span> ${opt.firstBusTimeStr || '--:--'}
+              </div>
+            ` : `
+              <div class="advice-card__countdown" id="cd-${idx}" style="color:${opt.routeColor}">
+                ${opt.predictedMin}<span class="advice-card__countdown-unit"> dk</span>
+              </div>
+            `}
           </div>
         </div>
 

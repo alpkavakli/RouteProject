@@ -279,7 +279,8 @@ async function loadRealArrivalDataset(pool) {
   for (const r of rows) {
     const hour = r.hour_of_day || 12;
     const dayOfWeek = r.day_of_week || 0;
-    const isWeekday = dayOfWeek >= 1 && dayOfWeek <= 5;
+    // CSV uses ISO numbering (Mon=0..Sun=6); `is_weekend` is authoritative.
+    const isWeekday = !r.is_weekend;
     const isRushHour = isWeekday && ((hour >= 7 && hour <= 9) || (hour >= 17 && hour <= 19));
 
     const features = [

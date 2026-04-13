@@ -19,12 +19,10 @@ async function generateAdvice(stop, arrivals, crowd, pool, allRoutes) {
   // Load historical data for this stop
   let seatData = {};
   let flowData = {};
-  let lastBusInfo = {};
 
   try {
     seatData = await loadSeatTurnoverData(pool, stop.id);
     flowData = await loadFlowAverages(pool, stop.id);
-    lastBusInfo = await checkLastBuses(pool);
   } catch (err) {
     // Graceful degradation — still provide basic advice without DB data
     console.log(`   ⚠️ Advisor DB query failed: ${err.message}`);
@@ -64,8 +62,11 @@ async function generateAdvice(stop, arrivals, crowd, pool, allRoutes) {
       remainingStops,
     });
 
-    // ─── Last Bus Detection ──────────────────────────────────────────
-    const isLastBus = lastBusInfo[routeId] || false;
+    // ─── Service State ───────────────────────────────────────────────
+    // Service has ended for tonight: the predictor already wrapped to
+    // tomorrow's first trip for this line. That is NOT a "last bus".
+    const serviceEnded = !!arrival.serviceEnded;
+    const isLastBus = !serviceEnded && !!arrival.isLastTripToday;
 
     // ─── Next Bus Comparison ─────────────────────────────────────────
     // Prefer the real "minutes to next bus" from the hackathon schedule.
@@ -84,6 +85,7 @@ async function generateAdvice(stop, arrivals, crowd, pool, allRoutes) {
       occupancyPct,
       seatsAvailable,
       isLastBus,
+      serviceEnded,
       minutesToNextBus,
       nextBusOccupancyPct,
       turnover,
@@ -113,6 +115,9 @@ async function generateAdvice(stop, arrivals, crowd, pool, allRoutes) {
       stressScore: stress.score,
       stressLabel: stress.label,
       isLastBus,
+      serviceEnded,
+      firstBusTimeStr: arrival.firstBusTimeStr || null,
+      lastBusTimeStr: arrival.lastBusTimeStr || null,
       minutesToNextBus,
       nextBusOccupancyPct: nextBusOccupancyPct ? Math.round(nextBusOccupancyPct) : null,
       recommendation,
@@ -120,8 +125,11 @@ async function generateAdvice(stop, arrivals, crowd, pool, allRoutes) {
     };
   });
 
-  // Find best option (lowest stress + available seats + reasonable wait)
-  const bestIdx = findBestOption(options);
+  // Find best option (lowest stress + available seats + reasonable wait).
+  // When all options are tomorrow's first trip (service ended), there is no
+  // "best pick" — every card is just informational.
+  const allServiceEnded = options.length > 0 && options.every(o => o.serviceEnded);
+  const bestIdx = allServiceEnded ? -1 : findBestOption(options);
 
   return {
     stopId: stop.id,
@@ -202,7 +210,20 @@ function computeStress({ occupancyPct, delayMin, isRushHour, precipitation, spee
   return { score: clampedScore, label };
 }
 
-function generateRecommendation({ arrival, occupancyPct, seatsAvailable, isLastBus, minutesToNextBus, nextBusOccupancyPct, turnover, stress, stopSequence, remainingStops }) {
+function generateRecommendation({ arrival, occupancyPct, seatsAvailable, isLastBus, serviceEnded, minutesToNextBus, nextBusOccupancyPct, turnover, stress, stopSequence, remainingStops }) {
+  // Priority 0: Service ended — tomorrow's first trip is showing
+  if (serviceEnded) {
+    const firstBus = arrival.firstBusTimeStr;
+    return {
+      action: 'service-ended',
+      text: firstBus
+        ? `🌙 Bu hat bu gece bitti — ilk otobüs yarın ${firstBus}`
+        : `🌙 Bu hat bu gece bitti — ilk otobüs yarın sabah`,
+      icon: '🌙',
+      priority: 'info',
+    };
+  }
+
   // Priority 1: Urgency — bus arriving very soon
   if (arrival.predictedMin <= 2) {
     return {
@@ -215,9 +236,12 @@ function generateRecommendation({ arrival, occupancyPct, seatsAvailable, isLastB
 
   // Priority 2: Last bus warning
   if (isLastBus) {
+    const lastBus = arrival.lastBusTimeStr;
     return {
       action: 'board',
-      text: `⚠️ Son sefer — bu gece başka otobüs yok`,
+      text: lastBus
+        ? `⚠️ Son sefer (${lastBus}) — bu gece başka otobüs yok`
+        : `⚠️ Son sefer — bu gece başka otobüs yok`,
       icon: '⚠️',
       priority: 'critical',
     };
@@ -298,6 +322,14 @@ function findBestOption(options) {
 function generateGlobalAdvice(options, crowd) {
   if (options.length === 0) return 'Şu an sefer bilgisi yok.';
 
+  const allServiceEnded = options.every(o => o.serviceEnded);
+  if (allServiceEnded) {
+    const firstBus = options.map(o => o.firstBusTimeStr).filter(Boolean).sort()[0];
+    return firstBus
+      ? `🌙 Bu saatte sefer yok — ilk otobüs yarın ${firstBus}`
+      : '🌙 Bu saatte sefer yok — ilk otobüs yarın sabah';
+  }
+
   const hasLastBus = options.some(o => o.isLastBus);
   if (hasLastBus) return '⚠️ Son seferler yaklaşıyor — kaçırmayın!';
 
@@ -371,35 +403,6 @@ async function loadFlowAverages(pool, stopId) {
         avgWaiting: r.avg_waiting || 0,
         avgBoarding: r.avg_boarding || 0,
       };
-    }
-    return result;
-  } catch (err) {
-    return {};
-  }
-}
-
-async function checkLastBuses(pool) {
-  try {
-    const now = new Date();
-    const hour = now.getHours();
-
-    // If it's after 21:00, check if this could be the last trip
-    if (hour < 20) return {};
-
-    const [rows] = await pool.execute(`
-      SELECT line_id, MAX(planned_departure) as last_departure
-      FROM hackathon_trips
-      GROUP BY line_id
-    `);
-
-    const result = {};
-    for (const r of rows) {
-      if (r.last_departure) {
-        const lastHour = parseInt(r.last_departure.split(':')[0]);
-        if (hour >= lastHour - 1) {
-          result[r.line_id] = true;
-        }
-      }
     }
     return result;
   } catch (err) {

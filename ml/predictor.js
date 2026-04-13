@@ -26,10 +26,19 @@ function classifyOccupancyPct(pct) {
   return 'crowded';
 }
 
+function formatTimeHHMM(t) {
+  if (t == null) return null;
+  const s = typeof t === 'string' ? t : t.toString();
+  const parts = s.split(':');
+  if (parts.length < 2) return null;
+  return `${String(parts[0]).padStart(2, '0')}:${String(parts[1]).padStart(2, '0')}`;
+}
+
 // Query the hackathon data for the real next scheduled arrival
 // for a given (stop, line), on the current day-of-week, after now.
 async function loadRealSchedule(pool, stopId, lineId, dayOfWeek, nowMinutes) {
   const nowTimeStr = `${String(Math.floor(nowMinutes / 60)).padStart(2, '0')}:${String(Math.floor(nowMinutes % 60)).padStart(2, '0')}:00`;
+  let serviceEnded = false;
 
   // Primary: today's day-of-week, next scheduled arrival
   let [rows] = await pool.execute(
@@ -50,6 +59,7 @@ async function loadRealSchedule(pool, stopId, lineId, dayOfWeek, nowMinutes) {
 
   // Fallback 1: today's day-of-week, wrap to first trip of the day
   if (rows.length === 0) {
+    serviceEnded = true;
     [rows] = await pool.execute(
       `SELECT a.trip_id, a.scheduled_arrival, a.stop_sequence,
               a.delay_min AS historical_delay, a.passengers_waiting,
@@ -104,6 +114,22 @@ async function loadRealSchedule(pool, stopId, lineId, dayOfWeek, nowMinutes) {
     ? Math.max(1, Math.round(nextBusSchedMinutes - schedMinutes))
     : null;
 
+  // Is this specific trip the last scheduled arrival of today for this (stop, line)?
+  // Only meaningful when service hasn't already ended (primary query hit).
+  let isLastTripToday = false;
+  if (!serviceEnded) {
+    const [[laterCheck]] = await pool.execute(
+      `SELECT COUNT(*) AS later_count
+       FROM hackathon_arrivals a
+       JOIN hackathon_trips t ON a.trip_id = t.trip_id
+       WHERE a.stop_id = ? AND a.line_id = ?
+         AND t.day_of_week = ?
+         AND a.scheduled_arrival > ?`,
+      [stopId, lineId, dayOfWeek, primary.scheduled_arrival]
+    );
+    isLastTripToday = Number(laterCheck?.later_count || 0) === 0;
+  }
+
   return {
     tripId: primary.trip_id,
     scheduledMin: Math.max(1, Math.round(minutesUntil)),
@@ -119,6 +145,10 @@ async function loadRealSchedule(pool, stopId, lineId, dayOfWeek, nowMinutes) {
     tripPrecipitationMm: Number(primary.precipitation_mm),
     trafficLevel: primary.traffic_level || null,
     minutesToNextBus,
+    serviceEnded,
+    isLastTripToday,
+    firstBusTimeStr: serviceEnded ? formatTimeHHMM(primary.scheduled_arrival) : null,
+    lastBusTimeStr: isLastTripToday ? formatTimeHHMM(primary.scheduled_arrival) : null,
   };
 }
 
@@ -194,9 +224,13 @@ function setWeather(weather) {
 async function predictArrivals(stop, routes, pool) {
   const now = new Date();
   const hour = now.getHours();
-  const dayOfWeek = now.getDay();
-  const isWeekday = dayOfWeek >= 1 && dayOfWeek <= 5;
+  const jsDay = now.getDay();                    // JS: Sun=0..Sat=6
+  const isWeekday = jsDay >= 1 && jsDay <= 5;    // Mon..Fri (wall clock)
   const isRushHour = isWeekday && ((hour >= 7 && hour <= 9) || (hour >= 17 && hour <= 19));
+  // The hackathon CSV uses ISO day numbering (Mon=0..Sun=6). The ML model
+  // was trained on that convention and the SQL rows are indexed by it, so
+  // all model inputs and schedule queries must use the converted value.
+  const dayOfWeek = (jsDay + 6) % 7;
   const nowMinutes = hour * 60 + now.getMinutes() + now.getSeconds() / 60;
 
   const profile = { popularity: stop.popularity || 0.5, avgDelay: stop.avg_delay || 2 };
@@ -218,6 +252,10 @@ async function predictArrivals(stop, routes, pool) {
     let realSpeedFactor = 1;
     let realNextBusMin = null;
     let busCapacity = 60;
+    let serviceEnded = false;
+    let isLastTripToday = false;
+    let firstBusTimeStr = null;
+    let lastBusTimeStr = null;
 
     if (real) {
       scheduledMin = real.scheduledMin;
@@ -228,6 +266,10 @@ async function predictArrivals(stop, routes, pool) {
       realSpeedFactor = real.speedFactor;
       realNextBusMin = real.minutesToNextBus;
       busCapacity = real.busCapacity;
+      serviceEnded = !!real.serviceEnded;
+      isLastTripToday = !!real.isLastTripToday;
+      firstBusTimeStr = real.firstBusTimeStr;
+      lastBusTimeStr = real.lastBusTimeStr;
     } else {
       scheduledMin = 3 + Math.floor(Math.random() * 20);
       recentDelay = Math.random() < 0.35 ? Math.random() * 6 : 0;
@@ -300,6 +342,10 @@ async function predictArrivals(stop, routes, pool) {
       realSpeedFactor,
       realNextBusMin,
       busCapacity,
+      serviceEnded,
+      isLastTripToday,
+      firstBusTimeStr,
+      lastBusTimeStr,
       fromRealData: !!real,
     };
   }));
@@ -313,9 +359,11 @@ async function predictArrivals(stop, routes, pool) {
 function predictCrowd(stop, arrivals = []) {
   const now = new Date();
   const hour = now.getHours();
-  const dayOfWeek = now.getDay();
-  const isWeekday = dayOfWeek >= 1 && dayOfWeek <= 5;
+  const jsDay = now.getDay();
+  const isWeekday = jsDay >= 1 && jsDay <= 5;
   const isRushHour = isWeekday && ((hour >= 7 && hour <= 9) || (hour >= 17 && hour <= 19));
+  // CSV uses ISO day-of-week (Mon=0..Sun=6); match it for the model input.
+  const dayOfWeek = (jsDay + 6) % 7;
 
   const stopId = typeof stop === 'string' ? stop : stop.id;
   const profile = { popularity: (typeof stop === 'object' ? stop.popularity : null) || 0.5 };
