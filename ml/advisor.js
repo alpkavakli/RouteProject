@@ -211,14 +211,14 @@ function computeStress({ occupancyPct, delayMin, isRushHour, precipitation, spee
 }
 
 function generateRecommendation({ arrival, occupancyPct, seatsAvailable, isLastBus, serviceEnded, minutesToNextBus, nextBusOccupancyPct, turnover, stress, stopSequence, remainingStops }) {
-  // Priority 0: Service ended — tomorrow's first trip is showing
+  // Priority 0: Service gap — next trip is hours away (night / pre-dawn)
   if (serviceEnded) {
     const firstBus = arrival.firstBusTimeStr;
     return {
       action: 'service-ended',
       text: firstBus
-        ? `🌙 Bu hat bu gece bitti — ilk otobüs yarın ${firstBus}`
-        : `🌙 Bu hat bu gece bitti — ilk otobüs yarın sabah`,
+        ? `Şu an sefer yok — ilk otobüs ${firstBus}`
+        : `Şu an sefer yok — ilk otobüs sabah`,
       icon: '🌙',
       priority: 'info',
     };
@@ -326,8 +326,8 @@ function generateGlobalAdvice(options, crowd) {
   if (allServiceEnded) {
     const firstBus = options.map(o => o.firstBusTimeStr).filter(Boolean).sort()[0];
     return firstBus
-      ? `🌙 Bu saatte sefer yok — ilk otobüs yarın ${firstBus}`
-      : '🌙 Bu saatte sefer yok — ilk otobüs yarın sabah';
+      ? `🌙 Şu an sefer yok — ilk otobüs ${firstBus}`
+      : '🌙 Şu an sefer yok — ilk otobüs sabah';
   }
 
   const hasLastBus = options.some(o => o.isLastBus);

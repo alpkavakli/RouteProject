@@ -6,6 +6,7 @@ services:
     environment:
       MYSQL_ROOT_PASSWORD: root
       MYSQL_DATABASE: predictive_transit
+      TZ: Europe/Istanbul
     ports:
       - "3306:3306"
     volumes:
@@ -28,6 +29,7 @@ services:
       - DB_PASSWORD=root
       - DB_NAME=predictive_transit
       - DB_PORT=3306
+      - TZ=Europe/Istanbul
     depends_on:
       db:
         condition: service_healthy

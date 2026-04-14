@@ -249,7 +249,7 @@ const UI = (() => {
           <div class="advice-card__time">
             ${opt.serviceEnded ? `
               <div class="advice-card__countdown advice-card__countdown--ended" style="color:#8b5cf6">
-                🌙 <span class="advice-card__countdown-unit">yarın</span> ${opt.firstBusTimeStr || '--:--'}
+                🌙 ${opt.firstBusTimeStr || '--:--'}
               </div>
             ` : `
               <div class="advice-card__countdown" id="cd-${idx}" style="color:${opt.routeColor}">

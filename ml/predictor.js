@@ -36,6 +36,12 @@ function formatTimeHHMM(t) {
 
 // Query the hackathon data for the real next scheduled arrival
 // for a given (stop, line), on the current day-of-week, after now.
+// When the next scheduled arrival is more than this many minutes away, we
+// treat the line as being in a "service gap" — effectively no active service
+// right now. This covers both the late-night case (after the day's last trip)
+// and the overnight case (past midnight but before the next day's first trip).
+const SERVICE_GAP_MIN = 180;
+
 async function loadRealSchedule(pool, stopId, lineId, dayOfWeek, nowMinutes) {
   const nowTimeStr = `${String(Math.floor(nowMinutes / 60)).padStart(2, '0')}:${String(Math.floor(nowMinutes % 60)).padStart(2, '0')}:00`;
   let serviceEnded = false;
@@ -101,6 +107,10 @@ async function loadRealSchedule(pool, stopId, lineId, dayOfWeek, nowMinutes) {
   // If the scheduled time already passed (wrap-around), push to "tomorrow"
   if (minutesUntil <= 0) minutesUntil += 24 * 60;
 
+  // Anything more than SERVICE_GAP_MIN from now is functionally a service
+  // gap — there's no point calling a 6-hour wait the "next arrival".
+  if (minutesUntil >= SERVICE_GAP_MIN) serviceEnded = true;
+
   // Recent avg historical delay for this stop+line (stable baseline)
   const [[delayRow]] = await pool.execute(
     `SELECT AVG(delay_min) AS avg_delay, COUNT(*) AS n
@@ -148,6 +158,7 @@ async function loadRealSchedule(pool, stopId, lineId, dayOfWeek, nowMinutes) {
     serviceEnded,
     isLastTripToday,
     firstBusTimeStr: serviceEnded ? formatTimeHHMM(primary.scheduled_arrival) : null,
+    firstBusHoursUntil: serviceEnded ? Math.round(minutesUntil / 60 * 10) / 10 : null,
     lastBusTimeStr: isLastTripToday ? formatTimeHHMM(primary.scheduled_arrival) : null,
   };
 }
