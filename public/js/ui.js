@@ -229,13 +229,17 @@ const UI = (() => {
       // Last bus badge
       const lastBusBadge = opt.isLastBus ? `<span class="last-bus-badge">⚠️ Son Sefer</span>` : '';
 
-      // Run badge
-      const runBadge = opt.predictedMin <= 2 ? `<span class="run-badge">🏃 Koş!</span>` : '';
+      // Service-ended badge (night / pre-dawn, no buses until tomorrow)
+      const endedBadge = opt.serviceEnded ? `<span class="service-ended-badge">🌙 Sefer Yok</span>` : '';
+
+      // Run badge (suppressed when service has ended — "koş" to a bus hours away makes no sense)
+      const runBadge = !opt.serviceEnded && opt.predictedMin <= 2 ? `<span class="run-badge">🏃 Koş!</span>` : '';
 
       const arrivalTime = Date.now() + opt.predictedMin * 60 * 1000;
 
       card.innerHTML = `
         ${isBest ? '<div class="advice-card__best-tag">⭐ En İyi Seçenek</div>' : ''}
+        ${endedBadge}
         ${lastBusBadge}
         ${runBadge}
         <div class="advice-card__top">
@@ -422,31 +426,56 @@ const UI = (() => {
   }
 
   // ─── Model Info Footer ────────────────────────────────────────────
+  // Polls /api/model/info until the RF models finish training, so the
+  // footer updates live from "Loading..." → real MAE/accuracy instead
+  // of showing a stale placeholder if the page loads mid-train.
+  let _modelInfoPollTimer = null;
   async function renderModelInfo() {
     const footer = document.getElementById('modelInfo');
     if (!footer) return;
 
-    try {
-      const res = await fetch('/api/model/info');
-      const info = await res.json();
+    async function tick() {
+      try {
+        const res = await fetch('/api/model/info');
+        const info = await res.json();
 
-      if (info && info.initialized) {
-        const arrMAE = info.arrivalModel?.mae ?? '--';
-        const crowdAcc = info.crowdModel?.accuracy ?? '--';
-        const source = info.dataSource === 'hackathon_real' ? '🏆 Real Sivas Data' : '🔬 Synthetic';
-        const classes = info.crowdModel?.numClasses || 3;
+        if (info && info.initialized) {
+          const arrMAE = info.arrivalModel?.mae ?? '--';
+          const crowdAcc = info.crowdModel?.accuracy ?? '--';
+          const source = info.dataSource === 'hackathon_real' ? '🏆 Real Sivas Data' : '🔬 Synthetic';
+          const classes = info.crowdModel?.numClasses || 3;
+          footer.innerHTML = `
+            <div class="model-info__badge">
+              🧠 Random Forest ML · ${source} · ${info.arrivalModel?.trainSamples || 0} samples
+            </div>
+            <div>
+              Arrival MAE: <span class="model-info__stat">${arrMAE} min</span> ·
+              Crowd Acc: <span class="model-info__stat">${crowdAcc}%</span> (${classes}-class)
+            </div>
+          `;
+          if (_modelInfoPollTimer) { clearInterval(_modelInfoPollTimer); _modelInfoPollTimer = null; }
+          return true;
+        }
+        // Still training — keep the loading badge visible and poll again.
         footer.innerHTML = `
-          <div class="model-info__badge">
-            🧠 Random Forest ML · ${source} · ${info.arrivalModel?.trainSamples || 0} samples
-          </div>
-          <div>
-            Arrival MAE: <span class="model-info__stat">${arrMAE} min</span> ·
-            Crowd Acc: <span class="model-info__stat">${crowdAcc}%</span> (${classes}-class)
-          </div>
+          <div class="model-info__badge">🧠 ML Engine Training... (Random Forest)</div>
+          <div style="opacity:.7">Modeller hazırlanıyor — birkaç saniye sürebilir.</div>
         `;
+        return false;
+      } catch (e) {
+        return false;
       }
-    } catch (e) {
-      // silent fail
+    }
+
+    const done = await tick();
+    if (!done && !_modelInfoPollTimer) {
+      _modelInfoPollTimer = setInterval(async () => {
+        const finished = await tick();
+        if (finished && _modelInfoPollTimer) {
+          clearInterval(_modelInfoPollTimer);
+          _modelInfoPollTimer = null;
+        }
+      }, 2000);
     }
   }
 

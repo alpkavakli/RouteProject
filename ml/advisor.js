@@ -410,4 +410,15 @@ async function loadFlowAverages(pool, stopId) {
   }
 }
 
-module.exports = { generateAdvice };
+module.exports = {
+  generateAdvice,
+  // Exposed for unit testing (pure helpers, no DB / no globals)
+  _internal: {
+    estimateOccupancy,
+    analyzeSeatTurnover,
+    computeStress,
+    generateRecommendation,
+    findBestOption,
+    generateGlobalAdvice,
+  },
+};

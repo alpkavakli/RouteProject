@@ -1124,9 +1124,10 @@
 .recommendation-chip__icon { font-size: 18px; flex-shrink: 0; }
 .recommendation-chip__text { flex: 1; }
 
-/* Last bus / run badges */
+/* Last bus / run / service-ended badges */
 .last-bus-badge,
-.run-badge {
+.run-badge,
+.service-ended-badge {
   position: absolute;
   top: var(--sp-sm);
   left: var(--sp-md);
@@ -1149,6 +1150,13 @@
   background: rgba(239, 68, 68, 0.2);
   color: #fca5a5;
   border: 1px solid rgba(239, 68, 68, 0.5);
+}
+
+.service-ended-badge {
+  background: rgba(139, 92, 246, 0.18);
+  color: #c4b5fd;
+  border: 1px solid rgba(139, 92, 246, 0.5);
+  animation: none; /* don't pulse the night state */
 }
 
 /* Global advice banner */

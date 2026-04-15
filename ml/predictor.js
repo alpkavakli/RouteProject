@@ -439,4 +439,8 @@ function getModelInfo() {
   };
 }
 
-module.exports = { init, setWeather, predictArrivals, predictCrowd, getModelInfo };
+module.exports = {
+  init, setWeather, predictArrivals, predictCrowd, getModelInfo,
+  // Exposed for unit testing (pure helpers, no DB / no globals)
+  _internal: { timeToMinutes, classifyOccupancyPct, formatTimeHHMM, SERVICE_GAP_MIN },
+};
