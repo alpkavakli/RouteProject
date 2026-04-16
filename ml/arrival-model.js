@@ -120,16 +120,14 @@ function predict(conditions) {
     (conditions.segmentIndex || 5) / 10,
   ];
 
-  // Get predictions from all trees for confidence
-  const treePredictions = model.estimators.map(tree => {
-    return tree.predict([features])[0];
-  });
-
-  const predictedDelay = model.predict([features])[0];
+  // Single pass through all trees — compute prediction + confidence together
+  // (was: model.predict traversed all trees, then we iterated estimators again)
+  const treePredictions = model.estimators.map(tree => tree.predict([features])[0]);
+  const sum = treePredictions.reduce((a, b) => a + b, 0);
+  const predictedDelay = sum / treePredictions.length;
 
   // Confidence: inverse of prediction variance across trees
-  const mean = treePredictions.reduce((a, b) => a + b, 0) / treePredictions.length;
-  const variance = treePredictions.reduce((a, b) => a + (b - mean) ** 2, 0) / treePredictions.length;
+  const variance = treePredictions.reduce((a, b) => a + (b - predictedDelay) ** 2, 0) / treePredictions.length;
   const stddev = Math.sqrt(variance);
   const confidence = Math.max(60, Math.min(98, Math.round(100 - stddev * 12)));
 

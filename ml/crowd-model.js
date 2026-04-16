@@ -192,16 +192,15 @@ function predict(conditions) {
     conditions.stopPopularity || 0.5,
   ];
 
-  const prediction = model.predict([features])[0];
-  const level = activeLabels[prediction] || activeLabels[0];
-
-  // Get class probabilities from tree votes
-  const treePredictions = model.estimators.map(tree => {
-    return tree.predict([features])[0];
-  });
-
+  // Single pass through all trees — vote + probabilities together
+  // (was: model.predict traversed all trees, then we iterated estimators again)
+  const treePredictions = model.estimators.map(tree => tree.predict([features])[0]);
   const votes = Array(activeLabels.length).fill(0);
   treePredictions.forEach(p => { if (p < votes.length) votes[p]++; });
+
+  // Majority vote = prediction
+  const prediction = votes.indexOf(Math.max(...votes));
+  const level = activeLabels[prediction] || activeLabels[0];
   const total = treePredictions.length;
   const probabilities = votes.map(v => parseFloat(((v / total) * 100).toFixed(1)));
 

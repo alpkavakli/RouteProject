@@ -1,5 +1,10 @@
 node_modules
-npm-debug.log
+test
 .git
-.gitignore
+.github
+.claude
 .env
+*.md
+.dockerignore
+.gitignore
+postman-collection.json

@@ -1,53 +1,55 @@
 // ─── Data Service ───────────────────────────────────────────────────────
-// Fetches data from the Node.js API server
+// Fetches data from the Node.js API server with error handling
 
 const API_BASE = '';
 
+async function safeFetch(url) {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } catch (err) {
+    console.warn(`[DataService] ${url} failed:`, err.message);
+    return null;
+  }
+}
+
 const DataService = {
   async getCities() {
-    const res = await fetch(`${API_BASE}/api/cities`);
-    return res.json();
+    return (await safeFetch(`${API_BASE}/api/cities`)) || [];
   },
 
   async getStops(city) {
     const url = city ? `${API_BASE}/api/stops?city=${city}` : `${API_BASE}/api/stops`;
-    const res = await fetch(url);
-    return res.json();
+    return (await safeFetch(url)) || [];
   },
 
   async getStop(id) {
-    const res = await fetch(`${API_BASE}/api/stops/${id}`);
-    return res.json();
+    return await safeFetch(`${API_BASE}/api/stops/${id}`);
   },
 
   async getArrivals(stopId) {
-    const res = await fetch(`${API_BASE}/api/stops/${stopId}/arrivals`);
-    return res.json();
+    return (await safeFetch(`${API_BASE}/api/stops/${stopId}/arrivals`)) || [];
   },
 
   async getCrowd(stopId) {
-    const res = await fetch(`${API_BASE}/api/stops/${stopId}/crowd`);
-    return res.json();
+    return await safeFetch(`${API_BASE}/api/stops/${stopId}/crowd`);
   },
 
   async getAdvice(stopId) {
-    const res = await fetch(`${API_BASE}/api/stops/${stopId}/advice`);
-    return res.json();
+    return await safeFetch(`${API_BASE}/api/stops/${stopId}/advice`);
   },
 
   async getHackathonStats() {
-    const res = await fetch(`${API_BASE}/api/hackathon/stats`);
-    return res.json();
+    return await safeFetch(`${API_BASE}/api/hackathon/stats`);
   },
 
   async getRoutes(city) {
     const url = city ? `${API_BASE}/api/routes?city=${city}` : `${API_BASE}/api/routes`;
-    const res = await fetch(url);
-    return res.json();
+    return (await safeFetch(url)) || [];
   },
 
   async getWeather(city) {
-    const res = await fetch(`${API_BASE}/api/weather?city=${city || 'Istanbul'}`);
-    return res.json();
+    return await safeFetch(`${API_BASE}/api/weather?city=${city || 'Istanbul'}`);
   },
 };

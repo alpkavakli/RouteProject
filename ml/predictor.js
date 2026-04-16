@@ -42,125 +42,110 @@ function formatTimeHHMM(t) {
 // and the overnight case (past midnight but before the next day's first trip).
 const SERVICE_GAP_MIN = 180;
 
-async function loadRealSchedule(pool, stopId, lineId, dayOfWeek, nowMinutes) {
+// Batch-load schedule data for ALL lines at a given stop in ~3 SQL round-trips
+// (was N+1: up to 5 queries × 5 lines = 25 round-trips per advice request).
+async function loadAllSchedules(pool, stopId, lineIds, dayOfWeek, nowMinutes) {
+  if (!lineIds || lineIds.length === 0) return {};
   const nowTimeStr = `${String(Math.floor(nowMinutes / 60)).padStart(2, '0')}:${String(Math.floor(nowMinutes % 60)).padStart(2, '0')}:00`;
-  let serviceEnded = false;
 
-  // Primary: today's day-of-week, next scheduled arrival
-  let [rows] = await pool.execute(
-    `SELECT a.trip_id, a.scheduled_arrival, a.stop_sequence,
+  // 1. Fetch up to 3 upcoming arrivals per line in one query (today's DOW, after now)
+  const placeholders = lineIds.map(() => '?').join(',');
+  const [allRows] = await pool.execute(
+    `SELECT a.line_id, a.trip_id, a.scheduled_arrival, a.stop_sequence,
             a.delay_min AS historical_delay, a.passengers_waiting,
             t.avg_occupancy_pct, t.speed_factor, t.bus_capacity,
             t.departure_delay_min, t.temperature_c, t.precipitation_mm,
-            t.traffic_level
+            t.traffic_level, t.day_of_week
      FROM hackathon_arrivals a
      JOIN hackathon_trips t ON a.trip_id = t.trip_id
-     WHERE a.stop_id = ? AND a.line_id = ?
-       AND t.day_of_week = ?
-       AND a.scheduled_arrival > ?
-     ORDER BY a.scheduled_arrival ASC
-     LIMIT 3`,
-    [stopId, lineId, dayOfWeek, nowTimeStr]
+     WHERE a.stop_id = ? AND a.line_id IN (${placeholders})
+     ORDER BY a.line_id, a.scheduled_arrival ASC`,
+    [stopId, ...lineIds]
   );
 
-  // Fallback 1: today's day-of-week, wrap to first trip of the day
-  if (rows.length === 0) {
-    serviceEnded = true;
-    [rows] = await pool.execute(
-      `SELECT a.trip_id, a.scheduled_arrival, a.stop_sequence,
-              a.delay_min AS historical_delay, a.passengers_waiting,
-              t.avg_occupancy_pct, t.speed_factor, t.bus_capacity,
-              t.departure_delay_min, t.temperature_c, t.precipitation_mm,
-              t.traffic_level
-       FROM hackathon_arrivals a
-       JOIN hackathon_trips t ON a.trip_id = t.trip_id
-       WHERE a.stop_id = ? AND a.line_id = ?
-         AND t.day_of_week = ?
-       ORDER BY a.scheduled_arrival ASC
-       LIMIT 3`,
-      [stopId, lineId, dayOfWeek]
-    );
-  }
-
-  // Fallback 2: any day of week (data sparsity)
-  if (rows.length === 0) {
-    [rows] = await pool.execute(
-      `SELECT a.trip_id, a.scheduled_arrival, a.stop_sequence,
-              a.delay_min AS historical_delay, a.passengers_waiting,
-              t.avg_occupancy_pct, t.speed_factor, t.bus_capacity,
-              t.departure_delay_min, t.temperature_c, t.precipitation_mm,
-              t.traffic_level
-       FROM hackathon_arrivals a
-       JOIN hackathon_trips t ON a.trip_id = t.trip_id
-       WHERE a.stop_id = ? AND a.line_id = ?
-       ORDER BY a.scheduled_arrival ASC
-       LIMIT 3`,
-      [stopId, lineId]
-    );
-  }
-
-  if (rows.length === 0) return null;
-
-  const primary = rows[0];
-  const schedMinutes = timeToMinutes(primary.scheduled_arrival);
-  let minutesUntil = schedMinutes - nowMinutes;
-  // If the scheduled time already passed (wrap-around), push to "tomorrow"
-  if (minutesUntil <= 0) minutesUntil += 24 * 60;
-
-  // Anything more than SERVICE_GAP_MIN from now is functionally a service
-  // gap — there's no point calling a 6-hour wait the "next arrival".
-  if (minutesUntil >= SERVICE_GAP_MIN) serviceEnded = true;
-
-  // Recent avg historical delay for this stop+line (stable baseline)
-  const [[delayRow]] = await pool.execute(
-    `SELECT AVG(delay_min) AS avg_delay, COUNT(*) AS n
+  // 2. Batch avg delay per line (one query for all lines)
+  const [delayRows] = await pool.execute(
+    `SELECT line_id, AVG(delay_min) AS avg_delay
      FROM hackathon_arrivals
-     WHERE stop_id = ? AND line_id = ?`,
-    [stopId, lineId]
+     WHERE stop_id = ? AND line_id IN (${placeholders})
+     GROUP BY line_id`,
+    [stopId, ...lineIds]
   );
+  const delayByLine = {};
+  for (const r of delayRows) delayByLine[r.line_id] = Number(r.avg_delay) || 0;
 
-  const nextBusSchedMinutes = rows[1] ? timeToMinutes(rows[1].scheduled_arrival) : null;
-  const minutesToNextBus = nextBusSchedMinutes != null
-    ? Math.max(1, Math.round(nextBusSchedMinutes - schedMinutes))
-    : null;
-
-  // Is this specific trip the last scheduled arrival of today for this (stop, line)?
-  // Only meaningful when service hasn't already ended (primary query hit).
-  let isLastTripToday = false;
-  if (!serviceEnded) {
-    const [[laterCheck]] = await pool.execute(
-      `SELECT COUNT(*) AS later_count
-       FROM hackathon_arrivals a
-       JOIN hackathon_trips t ON a.trip_id = t.trip_id
-       WHERE a.stop_id = ? AND a.line_id = ?
-         AND t.day_of_week = ?
-         AND a.scheduled_arrival > ?`,
-      [stopId, lineId, dayOfWeek, primary.scheduled_arrival]
-    );
-    isLastTripToday = Number(laterCheck?.later_count || 0) === 0;
+  // 3. Partition rows by line and compute per-line results in JS
+  const byLine = {};
+  for (const row of allRows) {
+    if (!byLine[row.line_id]) byLine[row.line_id] = [];
+    byLine[row.line_id].push(row);
   }
 
-  return {
-    tripId: primary.trip_id,
-    scheduledMin: Math.max(1, Math.round(minutesUntil)),
-    stopSequence: primary.stop_sequence || 1,
-    avgOccupancyPct: Number(primary.avg_occupancy_pct) || null,
-    speedFactor: Number(primary.speed_factor) || 1,
-    busCapacity: Number(primary.bus_capacity) || 60,
-    historicalDelay: Number(primary.historical_delay) || 0,
-    passengersWaiting: Number(primary.passengers_waiting) || 0,
-    recentAvgDelay: Number(delayRow?.avg_delay) || 0,
-    departureDelayMin: Number(primary.departure_delay_min) || 0,
-    tripTemperatureC: Number(primary.temperature_c),
-    tripPrecipitationMm: Number(primary.precipitation_mm),
-    trafficLevel: primary.traffic_level || null,
-    minutesToNextBus,
-    serviceEnded,
-    isLastTripToday,
-    firstBusTimeStr: serviceEnded ? formatTimeHHMM(primary.scheduled_arrival) : null,
-    firstBusHoursUntil: serviceEnded ? Math.round(minutesUntil / 60 * 10) / 10 : null,
-    lastBusTimeStr: isLastTripToday ? formatTimeHHMM(primary.scheduled_arrival) : null,
-  };
+  const results = {};
+  for (const lineId of lineIds) {
+    const lineRows = byLine[lineId] || [];
+    if (lineRows.length === 0) { results[lineId] = null; continue; }
+
+    let serviceEnded = false;
+
+    // Filter: today's DOW, after now
+    let candidates = lineRows.filter(
+      r => Number(r.day_of_week) === dayOfWeek && r.scheduled_arrival > nowTimeStr
+    );
+
+    // Fallback 1: today's DOW, any time (wrap to first trip)
+    if (candidates.length === 0) {
+      serviceEnded = true;
+      candidates = lineRows.filter(r => Number(r.day_of_week) === dayOfWeek);
+    }
+    // Fallback 2: any DOW
+    if (candidates.length === 0) {
+      candidates = lineRows;
+    }
+    if (candidates.length === 0) { results[lineId] = null; continue; }
+
+    // Take first 3
+    candidates = candidates.slice(0, 3);
+    const primary = candidates[0];
+    const schedMinutes = timeToMinutes(primary.scheduled_arrival);
+    let minutesUntil = schedMinutes - nowMinutes;
+    if (minutesUntil <= 0) minutesUntil += 24 * 60;
+    if (minutesUntil >= SERVICE_GAP_MIN) serviceEnded = true;
+
+    const nextBusSchedMinutes = candidates[1] ? timeToMinutes(candidates[1].scheduled_arrival) : null;
+    const minutesToNextBus = nextBusSchedMinutes != null
+      ? Math.max(1, Math.round(nextBusSchedMinutes - schedMinutes))
+      : null;
+
+    // Last trip check: are there any later trips today for this line?
+    const laterCount = lineRows.filter(
+      r => Number(r.day_of_week) === dayOfWeek && r.scheduled_arrival > primary.scheduled_arrival
+    ).length;
+    const isLastTripToday = !serviceEnded && laterCount === 0;
+
+    results[lineId] = {
+      tripId: primary.trip_id,
+      scheduledMin: Math.max(1, Math.round(minutesUntil)),
+      stopSequence: primary.stop_sequence || 1,
+      avgOccupancyPct: Number(primary.avg_occupancy_pct) || null,
+      speedFactor: Number(primary.speed_factor) || 1,
+      busCapacity: Number(primary.bus_capacity) || 60,
+      historicalDelay: Number(primary.historical_delay) || 0,
+      passengersWaiting: Number(primary.passengers_waiting) || 0,
+      recentAvgDelay: delayByLine[lineId] || 0,
+      departureDelayMin: Number(primary.departure_delay_min) || 0,
+      tripTemperatureC: Number(primary.temperature_c),
+      tripPrecipitationMm: Number(primary.precipitation_mm),
+      trafficLevel: primary.traffic_level || null,
+      minutesToNextBus,
+      serviceEnded,
+      isLastTripToday,
+      firstBusTimeStr: serviceEnded ? formatTimeHHMM(primary.scheduled_arrival) : null,
+      firstBusHoursUntil: serviceEnded ? Math.round(minutesUntil / 60 * 10) / 10 : null,
+      lastBusTimeStr: isLastTripToday ? formatTimeHHMM(primary.scheduled_arrival) : null,
+    };
+  }
+  return results;
 }
 
 /**
@@ -246,17 +231,20 @@ async function predictArrivals(stop, routes, pool) {
 
   const profile = { popularity: stop.popularity || 0.5, avgDelay: stop.avg_delay || 2 };
 
+  // Batch-load all schedules upfront (2 SQL queries instead of 25)
+  let scheduleMap = {};
+  if (pool) {
+    try {
+      scheduleMap = await loadAllSchedules(pool, stop.id, stop.routes, dayOfWeek, nowMinutes);
+    } catch (_) { /* fallback to synthetic for all routes */ }
+  }
+
   const results = await Promise.all(stop.routes.map(async (routeId) => {
     const route = routes.find(r => r.id === routeId);
     if (!route) return null;
 
-    // ─── Real schedule lookup (hackathon data) ───────────────────────
-    let real = null;
-    if (pool) {
-      try {
-        real = await loadRealSchedule(pool, stop.id, routeId, dayOfWeek, nowMinutes);
-      } catch (_) { /* fallback to synthetic */ }
-    }
+    // Use pre-loaded schedule data
+    const real = scheduleMap[routeId] || null;
 
     let scheduledMin, recentDelay, segmentIndex, vehicleId;
     let realOccupancyPct = null;

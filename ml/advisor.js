@@ -16,13 +16,11 @@
  * @returns {Object} Advice response
  */
 async function generateAdvice(stop, arrivals, crowd, pool, allRoutes) {
-  // Load historical data for this stop
+  // Load historical seat turnover data for this stop
   let seatData = {};
-  let flowData = {};
 
   try {
     seatData = await loadSeatTurnoverData(pool, stop.id);
-    flowData = await loadFlowAverages(pool, stop.id);
   } catch (err) {
     // Graceful degradation — still provide basic advice without DB data
     console.log(`   ⚠️ Advisor DB query failed: ${err.message}`);
@@ -348,37 +346,33 @@ function generateGlobalAdvice(options, crowd) {
 
 async function loadSeatTurnoverData(pool, stopId) {
   try {
-    // Get average boarding/alighting by line for stops near this one
+    // Single query: per-line averages + next-3-stop alighting via self-JOIN
+    // (was N+1: 1 GROUP BY query + 1 subquery per line)
     const [rows] = await pool.execute(`
-      SELECT 
-        line_id,
-        AVG(passengers_alighting) as avg_alighting,
-        AVG(passengers_boarding) as avg_boarding,
-        AVG(passengers_waiting) as avg_waiting
-      FROM hackathon_arrivals
-      WHERE stop_id = ?
-      GROUP BY line_id
-    `, [stopId]);
+      SELECT
+        a.line_id,
+        AVG(a.passengers_alighting) AS avg_alighting,
+        AVG(a.passengers_boarding) AS avg_boarding,
+        AVG(a.passengers_waiting) AS avg_waiting,
+        (
+          SELECT AVG(a2.passengers_alighting)
+          FROM hackathon_arrivals a2
+          WHERE a2.line_id = a.line_id
+            AND a2.stop_sequence > (SELECT AVG(a3.stop_sequence) FROM hackathon_arrivals a3 WHERE a3.stop_id = ? AND a3.line_id = a.line_id)
+            AND a2.stop_sequence <= (SELECT AVG(a3.stop_sequence) + 3 FROM hackathon_arrivals a3 WHERE a3.stop_id = ? AND a3.line_id = a.line_id)
+        ) AS avg_next_alighting
+      FROM hackathon_arrivals a
+      WHERE a.stop_id = ?
+      GROUP BY a.line_id
+    `, [stopId, stopId, stopId]);
 
     const result = {};
     for (const r of rows) {
-      // Also get alighting at next 3 stops
-      const [nextStops] = await pool.execute(`
-        SELECT AVG(passengers_alighting) as avg_next_alighting
-        FROM hackathon_arrivals
-        WHERE line_id = ? AND stop_sequence > (
-          SELECT AVG(stop_sequence) FROM hackathon_arrivals WHERE stop_id = ? AND line_id = ?
-        ) AND stop_sequence <= (
-          SELECT AVG(stop_sequence) + 3 FROM hackathon_arrivals WHERE stop_id = ? AND line_id = ?
-        )
-      `, [r.line_id, stopId, r.line_id, stopId, r.line_id]);
-
       result[r.line_id] = {
-        avgOccupancy: Math.min(100, (r.avg_waiting || 0) / 60 * 100), // rough estimate
-        avgAlightingNext3: nextStops[0]?.avg_next_alighting || 0,
+        avgOccupancy: Math.min(100, (r.avg_waiting || 0) / 60 * 100),
+        avgAlightingNext3: r.avg_next_alighting || 0,
       };
     }
-
     return result;
   } catch (err) {
     return {};

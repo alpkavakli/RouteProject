@@ -11,28 +11,31 @@
 
   // ─── Initialize ─────────────────────────────────────────────────
   async function init() {
+    // Start map immediately so Leaflet tiles begin downloading
+    // while we wait for /api/cities (saves 200-500ms perceived load)
+    MapController.init('map', onStopSelected, { lat: 39.7477, lng: 37.0179, zoom: 13 });
+
     // Load cities from DB
     allCities = await DataService.getCities();
     if (allCities.length === 0) return;
 
     currentCity = allCities[0].name;
 
-    // Feed cities to map and init
+    // Feed cities to map
     MapController.setCities(allCities);
-    MapController.init('map', onStopSelected, allCities[0]);
 
     // Build city toggle buttons
     buildCityToggle(allCities);
 
-    // Load data for default city
-    await switchCity(currentCity);
+    // Load data for default city + model info in parallel
+    await Promise.all([
+      switchCity(currentCity),
+      UI.renderModelInfo(),
+    ]);
 
     // Setup event listeners
     setupCityToggle();
     setupSearch();
-
-    // Fetch and render model info
-    UI.renderModelInfo();
   }
 
   function buildCityToggle(cities) {

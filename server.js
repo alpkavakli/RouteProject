@@ -1,7 +1,10 @@
+'use strict';
 require('dotenv').config();
 
 const express = require('express');
 const cors = require('cors');
+const compression = require('compression');
+const helmet = require('helmet');
 const path = require('path');
 const predictor = require('./ml/predictor');
 const advisor = require('./ml/advisor');
@@ -13,9 +16,34 @@ const PORT = process.env.PORT || 3000;
 
 let pool; // set after DB init
 
+// ─── Middleware ─────────────────────────────────────────────────────────────
+app.use(helmet({ contentSecurityPolicy: false }));   // security headers (CSP off for CDN tiles/fonts)
+app.use(compression());                              // gzip all responses (~60-70% smaller JSON)
 app.use(cors());
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
+
+// Request timing — logs API latency to console
+app.use((req, res, next) => {
+  const start = process.hrtime.bigint();
+  const origWriteHead = res.writeHead.bind(res);
+  res.writeHead = function (statusCode, ...args) {
+    const ms = Number(process.hrtime.bigint() - start) / 1e6;
+    res.setHeader('X-Response-Time', `${ms.toFixed(1)}ms`);
+    return origWriteHead(statusCode, ...args);
+  };
+  res.on('finish', () => {
+    if (req.path.startsWith('/api/')) {
+      const ms = Number(process.hrtime.bigint() - start) / 1e6;
+      console.log(`  ${req.method} ${req.path} → ${res.statusCode} (${ms.toFixed(1)}ms)`);
+    }
+  });
+  next();
+});
+
+app.use(express.static(path.join(__dirname, 'public'), {
+  maxAge: '1h',                                      // cache static assets for 1 hour
+  etag: true,
+}));
 
 // ─── Helper: query stops with their route IDs ─────────────────────────────
 
@@ -85,6 +113,23 @@ async function queryRoutes(filter) {
 
 function randomBetween(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+// ─── Shared weather loader (DRY) ──────────────────────────────────────────
+
+async function ensureWeatherLoaded(city) {
+  const [wRows] = await pool.execute(
+    `SELECT w.*, c.name AS city FROM weather w
+     JOIN cities c ON w.city_id = c.id
+     WHERE LOWER(c.name) = LOWER(?)
+     ORDER BY w.created_at DESC LIMIT 1`,
+    [city]
+  );
+  if (wRows.length > 0) {
+    predictor.setWeather({ temp: wRows[0].temp, precipitation: wRows[0].precipitation, windSpeed: wRows[0].wind_speed });
+  } else {
+    predictor.setWeather(generateRandomWeather(city));
+  }
 }
 
 // ─── Cities ────────────────────────────────────────────────────────────────
@@ -377,20 +422,7 @@ app.get('/api/stops/:id/arrivals', async (req, res) => {
     if (stops.length === 0) return res.status(404).json({ error: 'Stop not found' });
     const stop = stops[0];
 
-    // Ensure weather is loaded for this city
-    const [wRows] = await pool.execute(
-      `SELECT w.*, c.name AS city FROM weather w
-       JOIN cities c ON w.city_id = c.id
-       WHERE LOWER(c.name) = LOWER(?)
-       ORDER BY w.created_at DESC LIMIT 1`,
-      [stop.city]
-    );
-    if (wRows.length > 0) {
-      predictor.setWeather({ temp: wRows[0].temp, precipitation: wRows[0].precipitation, windSpeed: wRows[0].wind_speed });
-    } else {
-      predictor.setWeather(generateRandomWeather(stop.city));
-    }
-
+    await ensureWeatherLoaded(stop.city);
     const routes = await queryRoutes({ city: stop.city });
     const arrivals = await predictor.predictArrivals(stop, routes, pool);
     res.json(arrivals);
@@ -405,19 +437,7 @@ app.get('/api/stops/:id/crowd', async (req, res) => {
     if (stops.length === 0) return res.status(404).json({ error: 'Stop not found' });
     const stop = stops[0];
 
-    const [wRows] = await pool.execute(
-      `SELECT w.*, c.name AS city FROM weather w
-       JOIN cities c ON w.city_id = c.id
-       WHERE LOWER(c.name) = LOWER(?)
-       ORDER BY w.created_at DESC LIMIT 1`,
-      [stop.city]
-    );
-    if (wRows.length > 0) {
-      predictor.setWeather({ temp: wRows[0].temp, precipitation: wRows[0].precipitation, windSpeed: wRows[0].wind_speed });
-    } else {
-      predictor.setWeather(generateRandomWeather(stop.city));
-    }
-
+    await ensureWeatherLoaded(stop.city);
     const routes = await queryRoutes({ city: stop.city });
     const arrivals = await predictor.predictArrivals(stop, routes, pool);
     const crowd = predictor.predictCrowd(stop, arrivals);
@@ -435,20 +455,7 @@ app.get('/api/stops/:id/advice', async (req, res) => {
     if (stops.length === 0) return res.status(404).json({ error: 'Stop not found' });
     const stop = stops[0];
 
-    // Ensure weather is loaded
-    const [wRows] = await pool.execute(
-      `SELECT w.*, c.name AS city FROM weather w
-       JOIN cities c ON w.city_id = c.id
-       WHERE LOWER(c.name) = LOWER(?)
-       ORDER BY w.created_at DESC LIMIT 1`,
-      [stop.city]
-    );
-    if (wRows.length > 0) {
-      predictor.setWeather({ temp: wRows[0].temp, precipitation: wRows[0].precipitation, windSpeed: wRows[0].wind_speed });
-    } else {
-      predictor.setWeather(generateRandomWeather(stop.city));
-    }
-
+    await ensureWeatherLoaded(stop.city);
     const routes = await queryRoutes({ city: stop.city });
     const arrivals = await predictor.predictArrivals(stop, routes, pool);
     const crowd = predictor.predictCrowd(stop, arrivals);
@@ -464,19 +471,22 @@ app.get('/api/stops/:id/advice', async (req, res) => {
 
 app.get('/api/hackathon/stats', async (req, res) => {
   try {
-    const [[trips]] = await pool.execute('SELECT COUNT(*) as cnt FROM hackathon_trips');
-    const [[arrivals]] = await pool.execute('SELECT COUNT(*) as cnt FROM hackathon_arrivals');
-    const [[flow]] = await pool.execute('SELECT COUNT(*) as cnt FROM hackathon_passenger_flow');
-    const [[sivasStops]] = await pool.execute(
-      `SELECT COUNT(*) as cnt FROM stops s JOIN cities c ON s.city_id = c.id WHERE LOWER(c.name) = 'sivas'`
+    // Single round-trip instead of 4 sequential COUNT queries
+    const [rows] = await pool.execute(
+      `SELECT 'trips' AS tbl, COUNT(*) AS cnt FROM hackathon_trips
+       UNION ALL SELECT 'arrivals', COUNT(*) FROM hackathon_arrivals
+       UNION ALL SELECT 'flow', COUNT(*) FROM hackathon_passenger_flow
+       UNION ALL SELECT 'stops', COUNT(*) FROM stops s JOIN cities c ON s.city_id = c.id WHERE LOWER(c.name) = 'sivas'`
     );
+    const counts = {};
+    for (const r of rows) counts[r.tbl] = r.cnt;
 
     res.json({
-      loaded: trips.cnt > 0,
-      trips: trips.cnt,
-      arrivals: arrivals.cnt,
-      passengerFlow: flow.cnt,
-      sivasStops: sivasStops.cnt,
+      loaded: counts.trips > 0,
+      trips: counts.trips,
+      arrivals: counts.arrivals,
+      passengerFlow: counts.flow,
+      sivasStops: counts.stops,
       dataSource: predictor.getModelInfo().dataSource,
     });
   } catch (err) {
@@ -496,18 +506,46 @@ app.get('/{*path}', (req, res) => {
 
 // ─── Start Server ───────────────────────────────────────────────────────────
 
+// Health check (for container orchestration / uptime monitoring)
+let serverReady = false;
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: serverReady ? 'ok' : 'starting',
+    uptime: Math.round(process.uptime()),
+    memoryMB: Math.round(process.memoryUsage().rss / 1024 / 1024),
+    timestamp: new Date().toISOString(),
+  });
+});
+
 async function start() {
-  console.log('\n📦 Initializing database...');
+  const totalStart = Date.now();
+  console.log('\n' + '━'.repeat(50));
+  console.log('  PREDICTIVE TRANSIT — Starting up...');
+  console.log('━'.repeat(50));
+
+  // Step 1
+  const t1 = Date.now();
+  console.log('\n  [1/6] 📦 Initializing database...');
   await initDatabase();
   pool = require('./db/connection');
-  console.log('📦 Database ready.\n');
+  console.log(`  [1/6] ✅ Database ready (${((Date.now() - t1) / 1000).toFixed(1)}s)`);
 
-  // Load hackathon CSV data if not already loaded
+  // Step 2
+  const t2 = Date.now();
+  console.log('  [2/6] 📂 Loading hackathon CSV data...');
   await loadHackathonData(pool);
-  // Ensure Sivas has a stable weather row derived from trip averages
   await ensureSivasWeatherSeeded(pool);
+  console.log(`  [2/6] ✅ Data loaded (${((Date.now() - t2) / 1000).toFixed(1)}s)`);
 
-  // Delete model cache to force retraining on real data
+  // Step 3
+  console.log('  [3/6] 🔧 Creating database indexes...');
+  try {
+    await pool.execute('CREATE INDEX IF NOT EXISTS idx_ha_stop_line ON hackathon_arrivals (stop_id, line_id, scheduled_arrival)');
+  } catch (_) { /* index may already exist */ }
+  console.log('  [3/6] ✅ Indexes ready');
+
+  // Step 4
+  console.log('  [4/6] 🗑️  Clearing model cache (force retrain)...');
   const fs = require('fs');
   const cachePath = require('path').join(__dirname, 'ml', 'cache');
   try {
@@ -516,15 +554,35 @@ async function start() {
       for (const f of files) fs.unlinkSync(require('path').join(cachePath, f));
     }
   } catch (e) { }
+  console.log('  [4/6] ✅ Cache cleared');
 
-  // Train ML models (will use real data if hackathon data is loaded)
+  // Step 5 + 6 (ML training)
+  console.log('  [5/6] 🧠 Training arrival model (~65s)...');
+  console.log('  [6/6] 🧠 Training crowd model (~60s)...');
+  console.log('');
   await predictor.init(pool);
 
+  const totalSec = ((Date.now() - totalStart) / 1000).toFixed(1);
+  console.log('\n' + '━'.repeat(50));
+  console.log(`  ✅ ALL SYSTEMS READY — Total startup: ${totalSec}s`);
+  console.log('━'.repeat(50));
+
+  serverReady = true;
   app.listen(PORT, () => {
-    console.log(`🚌 PREDICTIVE TRANSIT server running on http://localhost:${PORT}`);
-    console.log(`📊 Model info: http://localhost:${PORT}/api/model/info`);
-    console.log(`💡 Advice:     http://localhost:${PORT}/api/stops/STP-L01-04/advice`);
+    console.log(`\n  🚌 Server:  http://localhost:${PORT}`);
+    console.log(`  📊 Model:   http://localhost:${PORT}/api/model/info`);
+    console.log(`  💡 Advice:  http://localhost:${PORT}/api/stops/STP-L01-04/advice`);
+    console.log(`  ❤️  Health:  http://localhost:${PORT}/api/health\n`);
   });
 }
 
 start();
+
+// ─── Global Error Handlers ──────────────────────────────────────────────────
+process.on('unhandledRejection', (reason) => {
+  console.error('⚠️ Unhandled Promise Rejection:', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('💥 Uncaught Exception:', err);
+  process.exit(1);
+});
