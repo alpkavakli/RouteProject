@@ -1,10 +1,12 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="PREDICTIVE TRANSIT — Real-time bus arrival predictions and crowd estimation for Istanbul and Ankara. Know when your bus will actually arrive.">
-  <title>PREDICTIVE TRANSIT — Real Arrival Times</title>
+  <meta name="description"
+    content="Route Albatros — Real-time bus arrival predictions and crowd estimation for Sivas. Know when your bus will actually arrive.">
+  <title>Route Albatros — Real Arrival Times</title>
 
   <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -20,20 +22,22 @@
   <link rel="stylesheet" href="/css/base.css">
   <link rel="stylesheet" href="/css/components.css">
 
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='80' font-size='80'>🚌</text></svg>">
+  <link rel="icon" href="/assets/logo (2).png">
 </head>
+
 <body>
   <div class="app" id="app">
     <!-- ─── Header ───────────────────────────────────────────────── -->
     <header class="header">
       <div class="header__brand">
-        <div class="header__logo">🚌</div>
+        <div class="header__logo">
+          <img src="/assets/logo.png" alt="Albatros" style="width:28px;height:28px;object-fit:contain;">
+        </div>
         <div>
-          <div class="header__title">PREDICTIVE TRANSIT</div>
-          <div class="header__subtitle">Real arrival times • Live crowd estimation</div>
+          <div class="header__title">Route Albatros</div>
+          <div class="header__subtitle">Real arrival times · Live crowd estimation</div>
         </div>
       </div>
-
       <div class="header__right">
         <div class="live-indicator">
           <span class="live-dot"></span>
@@ -45,12 +49,12 @@
         </div>
 
         <div class="weather" id="weatherWidget">
-          <span class="weather__icon" id="weatherIcon">☀️</span>
+          <span class="weather__icon" id="weatherIcon"></span>
           <span class="weather__temp" id="weatherTemp">--°</span>
           <div class="weather__divider"></div>
           <div class="weather__extra">
-            <span id="weatherWind">💨 -- km/h</span>
-            <span id="weatherHumidity">💧 --%</span>
+            <span id="weatherWind">-- km/h</span>
+            <span id="weatherHumidity">--%</span>
           </div>
         </div>
       </div>
@@ -61,14 +65,13 @@
       <!-- Search overlay -->
       <div class="map-search">
         <div class="map-search__input-wrap">
-          <span class="map-search__icon">🔍</span>
-          <input
-            type="text"
-            class="map-search__input"
-            id="searchInput"
-            placeholder="Search for a bus stop..."
-            autocomplete="off"
-          >
+          <span class="map-search__icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+          </span>
+          <input type="text" class="map-search__input" id="searchInput" placeholder="Search for a bus stop..."
+            autocomplete="off">
         </div>
         <div class="map-search__results" id="searchResults"></div>
       </div>
@@ -80,10 +83,15 @@
     <aside class="panel" id="panel">
       <!-- Empty state -->
       <div class="panel__empty" id="panelEmpty">
-        <div class="panel__empty-icon">📍</div>
+        <div class="panel__empty-icon">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="opacity:0.3">
+            <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>
+          </svg>
+        </div>
         <div class="panel__empty-title">Select a Bus Stop</div>
         <div class="panel__empty-desc">
-          Click on any bus stop on the map or use the search bar to view real-time arrival predictions and crowd estimates.
+          Click on any bus stop on the map or use the search bar to view real-time arrival predictions and crowd
+          estimates.
         </div>
       </div>
 
@@ -91,7 +99,11 @@
       <div id="panelContent" style="display:none; flex-direction:column; height:100%;">
         <div class="panel__header">
           <div class="panel__stop-name">
-            <span class="pin-icon">📍</span>
+            <span class="pin-icon">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+              </svg>
+            </span>
             <span id="panelStopName">--</span>
           </div>
           <div class="panel__stop-city" id="panelStopCity">--</div>
@@ -101,21 +113,21 @@
         <div class="panel__body" id="panelBody">
           <!-- Crowd Section -->
           <div class="section-header">
-            <span class="section-title">👥 Stop Crowd</span>
+            <span class="section-title">Stop Crowd</span>
             <span class="section-badge" id="crowdUpdatedAgo">Updated just now</span>
           </div>
           <div id="crowdCard"></div>
 
           <!-- Arrivals Section -->
           <div class="section-header">
-            <span class="section-title">🚍 Upcoming Arrivals</span>
+            <span class="section-title">Upcoming Arrivals</span>
             <span class="section-badge" id="arrivalCount">--</span>
           </div>
           <div id="arrivalCards"></div>
         </div>
 
         <div class="model-info" id="modelInfo">
-          <div class="model-info__badge">🧠 ML Engine Loading...</div>
+          <div class="model-info__badge">ML Engine Loading...</div>
         </div>
       </div>
     </aside>
@@ -127,4 +139,5 @@
   <script src="/js/ui.js"></script>
   <script src="/js/app.js"></script>
 </body>
+
 </html>

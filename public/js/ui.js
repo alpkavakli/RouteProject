@@ -19,8 +19,8 @@ const UI = (() => {
 
     icon.textContent = weatherIcons[weather.icon] || '🌡️';
     temp.textContent = `${weather.temp}°C`;
-    wind.textContent = `💨 ${weather.windSpeed} km/h`;
-    humidity.textContent = `💧 ${weather.humidity}%`;
+    wind.textContent = `${weather.windSpeed} km/h`;
+    humidity.textContent = `${weather.humidity}%`;
   }
 
   // ─── Search ───────────────────────────────────────────────────────
@@ -38,7 +38,11 @@ const UI = (() => {
       const div = document.createElement('div');
       div.className = 'search-result animate-fade-in';
       div.innerHTML = `
-        <span class="search-result__icon">🚏</span>
+        <span class="search-result__icon">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="display:block">
+            <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+          </svg>
+        </span>
         <div class="search-result__info">
           <div class="search-result__name">${stop.name}</div>
           <div class="search-result__city">${stop.city} · ${stop.routes.length} routes</div>
@@ -79,24 +83,24 @@ const UI = (() => {
 
     // 5-class mapping
     const crowdConfig = {
-      empty:    { color: '#22c55e', emoji: '🟢', dotCount: 0 },
-      light:    { color: '#84cc16', emoji: '🟡', dotCount: 1 },
-      low:      { color: '#22c55e', emoji: '🟢', dotCount: 0 },
-      moderate: { color: '#f59e0b', emoji: '🟠', dotCount: 2 },
-      medium:   { color: '#f59e0b', emoji: '🟠', dotCount: 2 },
-      busy:     { color: '#ef4444', emoji: '🔴', dotCount: 3 },
-      high:     { color: '#ef4444', emoji: '🔴', dotCount: 3 },
-      crowded:  { color: '#991b1b', emoji: '⛔', dotCount: 4 },
+      empty:    { color: '#22c55e', dotCount: 0 },
+      light:    { color: '#84cc16', dotCount: 1 },
+      low:      { color: '#22c55e', dotCount: 0 },
+      moderate: { color: '#f59e0b', dotCount: 2 },
+      medium:   { color: '#f59e0b', dotCount: 2 },
+      busy:     { color: '#ef4444', dotCount: 3 },
+      high:     { color: '#ef4444', dotCount: 3 },
+      crowded:  { color: '#991b1b', dotCount: 4 },
     };
 
     const config = crowdConfig[level] || crowdConfig.moderate;
     const totalDots = 5;
 
-    const trendIcon = { rising: '📈', stable: '➡️', falling: '📉' };
+    const trendIcon = { rising: '↑', stable: '→', falling: '↓' };
     const trendLabel = { rising: 'Rising', stable: 'Stable', falling: 'Falling' };
 
     const mlTag = crowd.mlPowered
-      ? `<span class="ml-badge">🧠 ML Predicted</span>`
+      ? `<span class="ml-badge">ML Predicted</span>`
       : '';
 
     // Probability bars for all available classes
@@ -120,7 +124,7 @@ const UI = (() => {
                 `<div class="crowd-dot" style="background:${i <= config.dotCount ? config.color : 'var(--border)'}; opacity:${i <= config.dotCount ? 1 : 0.3}"></div>`
               ).join('')}
             </div>
-            <span class="crowd-card__label" style="color:${config.color}">${config.emoji} ${level.charAt(0).toUpperCase() + level.slice(1)}</span>
+            <span class="crowd-card__label" style="color:${config.color}">${level.charAt(0).toUpperCase() + level.slice(1)}</span>
             ${mlTag}
           </div>
           <div class="crowd-card__count">~<span>${crowd.estimatedCount}</span> people</div>
@@ -133,7 +137,7 @@ const UI = (() => {
         </div>
         ${probSection}
         <div class="crowd-card__reason">
-          💡 ${crowd.reason}
+          ${crowd.reason}
         </div>
       </div>
     `;
@@ -177,9 +181,9 @@ const UI = (() => {
 
       // Status
       const statusLabel = {
-        'on-time': '✅ On Time',
-        'delayed': '⚠️ Delayed',
-        'early': '⚡ Early',
+        'on-time': 'On Time',
+        'delayed': 'Delayed',
+        'early': 'Early',
       };
 
       // Stress color
@@ -221,26 +225,26 @@ const UI = (() => {
 
       // Seat turnover
       const turnoverHTML = opt.seatTurnoverNote ? `
-        <div class="advice-card__turnover">🪑 ${opt.seatTurnoverNote}</div>
+        <div class="advice-card__turnover">${opt.seatTurnoverNote}</div>
       ` : '';
 
       // Last bus badge
-      const lastBusBadge = opt.isLastBus ? `<span class="last-bus-badge">⚠️ Son Sefer</span>` : '';
+      const lastBusBadge = opt.isLastBus ? `<span class="last-bus-badge">Son Sefer</span>` : '';
 
       // Run badge
-      const runBadge = opt.predictedMin <= 2 ? `<span class="run-badge">🏃 Koş!</span>` : '';
+      const runBadge = opt.predictedMin <= 2 ? `<span class="run-badge">Kos!</span>` : '';
 
       const arrivalTime = Date.now() + opt.predictedMin * 60 * 1000;
 
       card.innerHTML = `
-        ${isBest ? '<div class="advice-card__best-tag">⭐ En İyi Seçenek</div>' : ''}
+        ${isBest ? '<div class="advice-card__best-tag">En İyi Seçenek</div>' : ''}
         ${lastBusBadge}
         ${runBadge}
         <div class="advice-card__top">
           <div class="advice-card__route-info">
             <span class="advice-card__route-num" style="background:${opt.routeColor}">${opt.routeId}</span>
             <div>
-              <div class="advice-card__dest">→ ${opt.destination} <span class="ml-badge">🧠 ML</span></div>
+              <div class="advice-card__dest">→ ${opt.destination} <span class="ml-badge">ML</span></div>
               <div class="advice-card__vehicle">${opt.vehicleId}</div>
             </div>
           </div>
@@ -268,7 +272,7 @@ const UI = (() => {
           <div class="advice-card__metric">
             <div class="advice-card__metric-label">Koltuk</div>
             <span style="font-weight:600;color:${opt.seatsAvailable > 10 ? '#22c55e' : opt.seatsAvailable > 0 ? '#f59e0b' : '#ef4444'}">
-              🪑 ${opt.seatsAvailable}
+              ${opt.seatsAvailable}
             </span>
           </div>
           <div class="advice-card__metric">
@@ -347,9 +351,9 @@ const UI = (() => {
       card.style.animationDelay = `${idx * 60}ms`;
 
       const statusLabel = {
-        'on-time': '✅ On Time',
-        'delayed': '⚠️ Delayed',
-        'early': '⚡ Early',
+        'on-time': 'On Time',
+        'delayed': 'Delayed',
+        'early': 'Early',
       };
 
       const crowdColors = {
@@ -360,13 +364,13 @@ const UI = (() => {
       const crowdColor = crowdColors[arrival.occupancy] || '#888';
 
       const mlBadge = arrival.mlPowered
-        ? `<span class="ml-badge">🧠 ML</span>`
+        ? `<span class="ml-badge">ML</span>`
         : '';
 
       const arrivalTime = Date.now() + arrival.predictedMin * 60 * 1000;
 
       card.innerHTML = `
-        ${isRecommended ? '<div class="advice-card__best-tag">⭐ Best Option</div>' : ''}
+        ${isRecommended ? '<div class="advice-card__best-tag">Best Option</div>' : ''}
         <div class="advice-card__top">
           <div class="advice-card__route-info">
             <span class="advice-card__route-num" style="background:${arrival.routeColor}">${arrival.routeId}</span>
@@ -425,11 +429,11 @@ const UI = (() => {
       if (info && info.initialized) {
         const arrMAE = info.arrivalModel?.mae ?? '--';
         const crowdAcc = info.crowdModel?.accuracy ?? '--';
-        const source = info.dataSource === 'hackathon_real' ? '🏆 Real Sivas Data' : '🔬 Synthetic';
+        const source = info.dataSource === 'hackathon_real' ? 'Real Sivas Data' : 'Synthetic';
         const classes = info.crowdModel?.numClasses || 3;
         footer.innerHTML = `
           <div class="model-info__badge">
-            🧠 Random Forest ML · ${source} · ${info.arrivalModel?.trainSamples || 0} samples
+            Random Forest ML · ${source} · ${info.arrivalModel?.trainSamples || 0} samples
           </div>
           <div>
             Arrival MAE: <span class="model-info__stat">${arrMAE} min</span> ·

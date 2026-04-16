@@ -58,11 +58,11 @@ img {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--border-light);
+  background: rgba(0, 0, 0, 0.15);
   border-radius: var(--radius-full);
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--text-muted);
+  background: rgba(0, 0, 0, 0.25);
 }
 
 /* Selection */

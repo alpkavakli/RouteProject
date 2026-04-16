@@ -1,31 +1,31 @@
 /* ─── Design Tokens ──────────────────────────────────────────────────── */
 :root {
   /* Background & Surface */
-  --bg-primary: #0f1117;
-  --bg-secondary: #161822;
-  --bg-tertiary: #1c1f2e;
-  --bg-card: #1a1d2e;
-  --bg-card-hover: #222540;
-  --bg-overlay: rgba(15, 17, 23, 0.85);
-  --bg-glass: rgba(26, 29, 46, 0.7);
+  --bg-primary: #f5f6fa;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #f0f1f5;
+  --bg-card: #ffffff;
+  --bg-card-hover: #f7f8fc;
+  --bg-overlay: rgba(245, 246, 250, 0.9);
+  --bg-glass: rgba(255, 255, 255, 0.85);
 
   /* Text */
-  --text-primary: #f0f2f7;
-  --text-secondary: #9ca3b8;
-  --text-muted: #5e6478;
-  --text-accent: #7c8aff;
+  --text-primary: #1a1d2e;
+  --text-secondary: #4b5563;
+  --text-muted: #9ca3af;
+  --text-accent: #F0547A;
 
-  /* Accent Palette */
-  --accent-blue: #4f8cff;
-  --accent-blue-glow: rgba(79, 140, 255, 0.25);
-  --accent-purple: #8b5cf6;
-  --accent-purple-glow: rgba(139, 92, 246, 0.2);
-  --accent-cyan: #22d3ee;
-  --accent-cyan-glow: rgba(34, 211, 238, 0.2);
+  /* Accent Palette — Albatros Brand */
+  --accent-blue: #F0547A;
+  --accent-blue-glow: rgba(240, 84, 122, 0.25);
+  --accent-purple: #7B52A8;
+  --accent-purple-glow: rgba(123, 82, 168, 0.2);
+  --accent-cyan: #C084FC;
+  --accent-cyan-glow: rgba(192, 132, 252, 0.2);
   --accent-green: #34d399;
   --accent-amber: #fbbf24;
   --accent-red: #f87171;
-  --accent-pink: #f472b6;
+  --accent-pink: #F0547A;
 
   /* Status Colors */
   --status-ontime: #34d399;
@@ -44,16 +44,16 @@
   --crowd-high-bg: rgba(248, 113, 113, 0.12);
 
   /* Borders */
-  --border-subtle: rgba(255, 255, 255, 0.06);
-  --border-light: rgba(255, 255, 255, 0.1);
-  --border-accent: rgba(79, 140, 255, 0.3);
+  --border-subtle: rgba(0, 0, 0, 0.07);
+  --border-light: rgba(0, 0, 0, 0.12);
+  --border-accent: rgba(240, 84, 122, 0.3);
 
   /* Shadows */
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
-  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.5);
-  --shadow-glow-blue: 0 0 20px rgba(79, 140, 255, 0.15);
-  --shadow-glow-purple: 0 0 20px rgba(139, 92, 246, 0.15);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.12);
+  --shadow-glow-blue: 0 0 20px rgba(240, 84, 122, 0.15);
+  --shadow-glow-purple: 0 0 20px rgba(123, 82, 168, 0.15);
 
   /* Spacing */
   --sp-xs: 4px;

@@ -58,12 +58,12 @@
       DataService.getWeather(cityName),
     ]);
 
-    allStops = stops;
-    allRoutes = routes;
+    allStops = Array.isArray(stops) ? stops : [];
+    allRoutes = Array.isArray(routes) ? routes : [];
 
     // Render
-    MapController.renderStops(stops);
-    MapController.drawRoutes(routes, stops);
+    MapController.renderStops(allStops);
+    MapController.drawRoutes(allRoutes, allStops);
     MapController.flyToCity(cityName);
     UI.renderWeather(weather);
     UI.showPanelEmpty();
@@ -88,10 +88,14 @@
 
   // ─── Stop Selection ─────────────────────────────────────────────
   async function onStopSelected(stopId) {
-    const stop = allStops.find(s => s.id === stopId);
-    if (!stop) return;
+    const stop = allStops.find(s => String(s.id) === String(stopId));
+    if (!stop) {
+      console.warn('[onStopSelected] Stop not found in allStops:', stopId, 'allStops count:', allStops.length);
+      return;
+    }
 
-    UI.showPanelContent(stop, allRoutes);
+    const safeRoutes = Array.isArray(allRoutes) ? allRoutes : [];
+    UI.showPanelContent(stop, safeRoutes);
     UI.showArrivalsLoading();
     UI.showCrowdLoading();
 
@@ -106,21 +110,29 @@
           UI.renderCrowd(advice.crowd);
         }
       } catch (err) {
-        // Fallback to regular endpoints
+        console.warn('[advice] Falling back to regular endpoints:', err.message);
+        try {
+          const [arrivals, crowd] = await Promise.all([
+            DataService.getArrivals(stopId),
+            DataService.getCrowd(stopId),
+          ]);
+          UI.renderArrivals(arrivals);
+          UI.renderCrowd(crowd);
+        } catch (e) {
+          console.error('[arrivals/crowd] Failed:', e.message);
+        }
+      }
+    } else {
+      try {
         const [arrivals, crowd] = await Promise.all([
           DataService.getArrivals(stopId),
           DataService.getCrowd(stopId),
         ]);
         UI.renderArrivals(arrivals);
         UI.renderCrowd(crowd);
+      } catch (err) {
+        console.error('[arrivals/crowd] Failed:', err.message);
       }
-    } else {
-      const [arrivals, crowd] = await Promise.all([
-        DataService.getArrivals(stopId),
-        DataService.getCrowd(stopId),
-      ]);
-      UI.renderArrivals(arrivals);
-      UI.renderCrowd(crowd);
     }
 
     // Auto-refresh every 30s
@@ -135,12 +147,14 @@
             if (advice.crowd) UI.renderCrowd(advice.crowd);
           } catch (e) {}
         } else {
-          const [arr, crd] = await Promise.all([
-            DataService.getArrivals(selId),
-            DataService.getCrowd(selId),
-          ]);
-          UI.renderArrivals(arr);
-          UI.renderCrowd(crd);
+          try {
+            const [arr, crd] = await Promise.all([
+              DataService.getArrivals(selId),
+              DataService.getCrowd(selId),
+            ]);
+            UI.renderArrivals(arr);
+            UI.renderCrowd(crd);
+          } catch (e) {}
         }
       }
     }, 30000);

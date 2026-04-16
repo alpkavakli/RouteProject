@@ -1,4 +1,3 @@
-version: "3.8"
 
 services:
   db:
@@ -28,6 +27,10 @@ services:
       - DB_PASSWORD=root
       - DB_NAME=predictive_transit
       - DB_PORT=3306
+    volumes:
+      - ./public:/app/public
+      - ./server.js:/app/server.js
+      - ./ml:/app/ml
     depends_on:
       db:
         condition: service_healthy
