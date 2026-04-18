@@ -638,6 +638,62 @@ const UI = (() => {
     }
   }
 
+  // ─── Delay Cascade Badge ────────────────────────────────────────────
+  // Renders a compact card under the route badges in the side panel that
+  // tells the rider how delay is expected to grow as they ride downstream.
+  function renderCascade(cascadeData) {
+    const container = document.getElementById('cascadeCard');
+    if (!container) return;
+    if (!cascadeData || !cascadeData.stops || cascadeData.stops.length < 2) {
+      container.innerHTML = '';
+      container.style.display = 'none';
+      return;
+    }
+
+    const start = cascadeData.startDelay;
+    const end = cascadeData.endDelay;
+    const growth = cascadeData.delayGrowth;
+    const endColor = cascadeData.stops[cascadeData.stops.length - 1].color;
+    const startColor = cascadeData.stops[0].color;
+
+    // Tiny inline severity bars — one per downstream stop
+    const bars = cascadeData.stops.map(s => `
+      <div class="cascade-bar"
+           style="background:${s.color}"
+           title="${s.stopName}: +${s.predictedDelay} dk"></div>
+    `).join('');
+
+    const headline = cascadeData.firstSevereStop
+      ? `<strong>${cascadeData.firstSevereStop.name}</strong>'a kadar +${cascadeData.firstSevereStop.delay} dk`
+      : `Hat sonuna kadar +${end} dk`;
+
+    container.style.display = 'block';
+    container.innerHTML = `
+      <div class="cascade-card animate-fade-in">
+        <div class="cascade-card__header">
+          <span class="cascade-card__title">Gecikme Yayılımı · ${cascadeData.routeId}</span>
+          <span class="cascade-card__badge" style="color:${endColor};border-color:${endColor}">+${growth} dk</span>
+        </div>
+        <div class="cascade-card__bars">${bars}</div>
+        <div class="cascade-card__legend">
+          <span style="color:${startColor}">${start} dk</span>
+          <span class="cascade-card__legend-arrow">→</span>
+          <span style="color:${endColor}">${end} dk</span>
+          <span class="cascade-card__legend-stops">· ${cascadeData.downstreamStopCount} durak</span>
+        </div>
+        <div class="cascade-card__hint">${headline}</div>
+      </div>
+    `;
+  }
+
+  function clearCascade() {
+    const container = document.getElementById('cascadeCard');
+    if (container) {
+      container.innerHTML = '';
+      container.style.display = 'none';
+    }
+  }
+
   return {
     renderWeather,
     renderSearchResults,
@@ -647,6 +703,8 @@ const UI = (() => {
     renderArrivals,
     renderAdvice,
     renderJourney,
+    renderCascade,
+    clearCascade,
     renderModelInfo,
     showArrivalsLoading,
     showCrowdLoading,

@@ -5,6 +5,7 @@ const MapController = (() => {
   let markers = {};
   let routePolylines = [];
   let journeyHighlights = [];
+  let cascadeLayers = [];
   let selectedStopId = null;
   let onStopSelect = null;
   let citiesMap = {};
@@ -191,5 +192,54 @@ const MapController = (() => {
     journeyHighlights = [];
   }
 
-  return { init, setCities, renderStops, selectStop, flyToCity, drawRoutes, getSelectedStopId, highlightJourney, clearJourneyHighlight };
+  // ─── Delay Cascade Overlay ──────────────────────────────────────────
+  // Draws each downstream segment of a route in the predicted-delay color
+  // (green→red), with small numeric badges showing the delay at every stop.
+  function showCascade(cascadeData) {
+    clearCascade();
+    if (!cascadeData || !cascadeData.stops || cascadeData.stops.length < 2) return;
+
+    const stops = cascadeData.stops;
+
+    // Segments between consecutive stops, colored by the *destination* stop's severity
+    for (let i = 0; i < stops.length - 1; i++) {
+      const from = stops[i];
+      const to = stops[i + 1];
+      const seg = L.polyline(
+        [[from.lat, from.lng], [to.lat, to.lng]],
+        {
+          color: to.color,
+          weight: 6,
+          opacity: 0.85,
+          lineCap: 'round',
+        }
+      ).addTo(map);
+      seg.bindTooltip(
+        `<strong>${to.stopName}</strong><br>Beklenen gecikme: <b style="color:${to.color}">+${to.predictedDelay} dk</b>`,
+        { sticky: true, className: 'cascade-tooltip' }
+      );
+      cascadeLayers.push(seg);
+    }
+
+    // Numeric delay pins on each downstream stop (skip the origin)
+    for (let i = 1; i < stops.length; i++) {
+      const s = stops[i];
+      const pin = L.divIcon({
+        className: '',
+        html: `<div class="cascade-pin" style="background:${s.color};border-color:${s.color}">+${Math.round(s.predictedDelay)}</div>`,
+        iconSize: [38, 22],
+        iconAnchor: [19, 11],
+      });
+      const m = L.marker([s.lat, s.lng], { icon: pin, interactive: false, keyboard: false });
+      m.addTo(map);
+      cascadeLayers.push(m);
+    }
+  }
+
+  function clearCascade() {
+    cascadeLayers.forEach(l => map.removeLayer(l));
+    cascadeLayers = [];
+  }
+
+  return { init, setCities, renderStops, selectStop, flyToCity, drawRoutes, getSelectedStopId, highlightJourney, clearJourneyHighlight, showCascade, clearCascade };
 })();

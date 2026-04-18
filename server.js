@@ -9,6 +9,7 @@ const path = require('path');
 const predictor = require('./ml/predictor');
 const advisor = require('./ml/advisor');
 const journey = require('./ml/journey');
+const cascade = require('./ml/cascade');
 const { initDatabase } = require('./db/init');
 const { loadHackathonData, ensureSivasWeatherSeeded } = require('./db/load-csv');
 
@@ -513,6 +514,29 @@ app.get('/api/journey', async (req, res) => {
   }
 });
 
+// ─── Delay Cascade ──────────────────────────────────────────────────────
+
+app.get('/api/cascade', async (req, res) => {
+  try {
+    const { routeId, fromStopId, currentDelay } = req.query;
+    if (!routeId || !fromStopId) {
+      return res.status(400).json({ error: 'routeId and fromStopId query params required' });
+    }
+    if (!cascade.isInitialized()) {
+      return res.status(503).json({ error: 'Cascade model not yet initialized' });
+    }
+
+    const overrideDelay = currentDelay != null && currentDelay !== '' ? Number(currentDelay) : null;
+    const result = cascade.predictCascade(routeId, fromStopId, overrideDelay);
+    if (!result) {
+      return res.status(404).json({ error: `No cascade data for route ${routeId} from stop ${fromStopId}` });
+    }
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── Hackathon Stats ────────────────────────────────────────────────────
 
 app.get('/api/hackathon/stats', async (req, res) => {
@@ -607,6 +631,7 @@ async function start() {
   console.log('  [6/6] 🧠 Training crowd model (~60s)...');
   console.log('');
   await predictor.init(pool);
+  await cascade.init(pool);
 
   const totalSec = ((Date.now() - totalStart) / 1000).toFixed(1);
   console.log('\n' + '━'.repeat(50));

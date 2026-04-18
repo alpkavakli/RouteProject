@@ -112,6 +112,8 @@
     UI.showPanelContent(stop, allRoutes);
     UI.showArrivalsLoading();
     UI.showCrowdLoading();
+    UI.clearCascade();
+    MapController.clearCascade();
 
     // Show journey search for Sivas stops
     const isSivas = currentCity && currentCity.toLowerCase() === 'sivas';
@@ -123,8 +125,30 @@
     // Load arrivals in the default mode
     await loadArrivalsMode(stopId);
 
+    // Cascade overlay (don't block arrivals UI on this — fire and forget)
+    loadCascadeForStop(stop);
+
     // Start auto-refresh
     startAutoRefresh();
+  }
+
+  // ─── Delay Cascade ──────────────────────────────────────────────
+  // Picks the first route serving this stop that has more than one
+  // downstream stop and renders the cascade overlay + side-panel badge.
+  // Guards against rapid-fire stop changes: discards results if the user
+  // has already moved on to a different stop.
+  async function loadCascadeForStop(stop) {
+    if (!stop || !stop.routes || stop.routes.length === 0) return;
+
+    for (const routeId of stop.routes) {
+      const data = await DataService.getCascade(routeId, stop.id);
+      if (selectedStopId !== stop.id) return;       // user moved on — abandon
+      if (data && data.stops && data.stops.length >= 2) {
+        UI.renderCascade(data);
+        MapController.showCascade(data);
+        return;
+      }
+    }
   }
 
   // ─── Arrivals Mode ──────────────────────────────────────────────
@@ -162,6 +186,8 @@
   // ─── Journey Mode ──────────────────────────────────────────────
   async function loadJourneyMode(fromId, toId) {
     UI.showArrivalsLoading();
+    UI.clearCascade();
+    MapController.clearCascade();
 
     try {
       const journeyData = await DataService.getJourney(fromId, toId);
@@ -266,6 +292,8 @@
       if (selectedStopId) {
         UI.showArrivalsLoading();
         loadArrivalsMode(selectedStopId);
+        const stop = allStops.find(s => s.id === selectedStopId);
+        if (stop) loadCascadeForStop(stop);
       }
     });
   }

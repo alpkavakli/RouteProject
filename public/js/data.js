@@ -48,6 +48,10 @@ const DataService = {
     return await safeFetch(`${API_BASE}/api/journey?from=${encodeURIComponent(fromId)}&to=${encodeURIComponent(toId)}`);
   },
 
+  async getCascade(routeId, fromStopId) {
+    return await safeFetch(`${API_BASE}/api/cascade?routeId=${encodeURIComponent(routeId)}&fromStopId=${encodeURIComponent(fromStopId)}`);
+  },
+
   async getRoutes(city) {
     const url = city ? `${API_BASE}/api/routes?city=${city}` : `${API_BASE}/api/routes`;
     return (await safeFetch(url)) || [];
