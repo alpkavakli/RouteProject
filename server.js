@@ -42,7 +42,7 @@ app.use((req, res, next) => {
 });
 
 app.use(express.static(path.join(__dirname, 'public'), {
-  maxAge: '1h',                                      // cache static assets for 1 hour
+  maxAge: 0,                                         // no caching — dev iteration must serve fresh
   etag: true,
 }));
 

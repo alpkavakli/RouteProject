@@ -39,8 +39,8 @@ const MapController = (() => {
       attributionControl: true,
     });
 
-    // Dark tile layer
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    // Light tile layer
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>',
       subdomains: 'abcd',
       maxZoom: 19,
@@ -64,9 +64,9 @@ const MapController = (() => {
       marker.bindPopup(`
         <div style="min-width:160px;">
           <strong style="font-size:14px;">${stop.name}</strong>
-          <div style="color:#9ca3b8;font-size:11px;margin:4px 0;">${stop.city}</div>
+          <div style="color:#6b7280;font-size:11px;margin:4px 0;">${stop.city}</div>
           <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;">
-            ${stop.routes.map(r => `<span style="background:rgba(79,140,255,0.15);color:#4f8cff;padding:1px 6px;border-radius:10px;font-size:11px;font-weight:600;">${r}</span>`).join('')}
+            ${stop.routes.map(r => `<span style="background:rgba(240,84,122,0.12);color:#F0547A;padding:1px 6px;border-radius:10px;font-size:11px;font-weight:600;">${r}</span>`).join('')}
           </div>
         </div>
       `, { closeButton: false });

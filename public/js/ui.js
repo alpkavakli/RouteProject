@@ -19,8 +19,8 @@ const UI = (() => {
 
     icon.textContent = weatherIcons[weather.icon] || '🌡️';
     temp.textContent = `${weather.temp}°C`;
-    wind.textContent = `💨 ${weather.windSpeed} km/h`;
-    humidity.textContent = `💧 ${weather.humidity}%`;
+    wind.textContent = `${weather.windSpeed} km/h`;
+    humidity.textContent = `${weather.humidity}%`;
   }
 
   // ─── Search ───────────────────────────────────────────────────────
@@ -38,7 +38,11 @@ const UI = (() => {
       const div = document.createElement('div');
       div.className = 'search-result animate-fade-in';
       div.innerHTML = `
-        <span class="search-result__icon">🚏</span>
+        <span class="search-result__icon">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="display:block">
+            <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+          </svg>
+        </span>
         <div class="search-result__info">
           <div class="search-result__name">${stop.name}</div>
           <div class="search-result__city">${stop.city} · ${stop.routes.length} routes</div>
@@ -79,24 +83,24 @@ const UI = (() => {
 
     // 5-class mapping
     const crowdConfig = {
-      empty:    { color: '#22c55e', emoji: '🟢', dotCount: 0 },
-      light:    { color: '#84cc16', emoji: '🟡', dotCount: 1 },
-      low:      { color: '#22c55e', emoji: '🟢', dotCount: 0 },
-      moderate: { color: '#f59e0b', emoji: '🟠', dotCount: 2 },
-      medium:   { color: '#f59e0b', emoji: '🟠', dotCount: 2 },
-      busy:     { color: '#ef4444', emoji: '🔴', dotCount: 3 },
-      high:     { color: '#ef4444', emoji: '🔴', dotCount: 3 },
-      crowded:  { color: '#991b1b', emoji: '⛔', dotCount: 4 },
+      empty:    { color: '#22c55e', dotCount: 0 },
+      light:    { color: '#84cc16', dotCount: 1 },
+      low:      { color: '#22c55e', dotCount: 0 },
+      moderate: { color: '#f59e0b', dotCount: 2 },
+      medium:   { color: '#f59e0b', dotCount: 2 },
+      busy:     { color: '#ef4444', dotCount: 3 },
+      high:     { color: '#ef4444', dotCount: 3 },
+      crowded:  { color: '#991b1b', dotCount: 4 },
     };
 
     const config = crowdConfig[level] || crowdConfig.moderate;
     const totalDots = 5;
 
-    const trendIcon = { rising: '📈', stable: '➡️', falling: '📉' };
+    const trendIcon = { rising: '↑', stable: '→', falling: '↓' };
     const trendLabel = { rising: 'Rising', stable: 'Stable', falling: 'Falling' };
 
     const mlTag = crowd.mlPowered
-      ? `<span class="ml-badge">🧠 ML Predicted</span>`
+      ? `<span class="ml-badge">ML Predicted</span>`
       : '';
 
     // Probability bars for all available classes
@@ -120,7 +124,7 @@ const UI = (() => {
                 `<div class="crowd-dot" style="background:${i <= config.dotCount ? config.color : 'var(--border)'}; opacity:${i <= config.dotCount ? 1 : 0.3}"></div>`
               ).join('')}
             </div>
-            <span class="crowd-card__label" style="color:${config.color}">${config.emoji} ${level.charAt(0).toUpperCase() + level.slice(1)}</span>
+            <span class="crowd-card__label" style="color:${config.color}">${level.charAt(0).toUpperCase() + level.slice(1)}</span>
             ${mlTag}
           </div>
           <div class="crowd-card__count">~<span>${crowd.estimatedCount}</span> people</div>
@@ -133,7 +137,7 @@ const UI = (() => {
         </div>
         ${probSection}
         <div class="crowd-card__reason">
-          💡 ${crowd.reason}
+          ${crowd.reason}
         </div>
       </div>
     `;
@@ -179,9 +183,9 @@ const UI = (() => {
 
       // Status
       const statusLabel = {
-        'on-time': '✅ On Time',
-        'delayed': '⚠️ Delayed',
-        'early': '⚡ Early',
+        'on-time': 'On Time',
+        'delayed': 'Delayed',
+        'early': 'Early',
       };
 
       // Stress color
@@ -223,22 +227,22 @@ const UI = (() => {
 
       // Seat turnover
       const turnoverHTML = opt.seatTurnoverNote ? `
-        <div class="advice-card__turnover">🪑 ${opt.seatTurnoverNote}</div>
+        <div class="advice-card__turnover">${opt.seatTurnoverNote}</div>
       ` : '';
 
       // Last bus badge
-      const lastBusBadge = opt.isLastBus ? `<span class="last-bus-badge">⚠️ Son Sefer</span>` : '';
+      const lastBusBadge = opt.isLastBus ? `<span class="last-bus-badge">Son Sefer</span>` : '';
 
       // Service-ended badge (night / pre-dawn, no buses until tomorrow)
-      const endedBadge = opt.serviceEnded ? `<span class="service-ended-badge">🌙 Sefer Yok</span>` : '';
+      const endedBadge = opt.serviceEnded ? `<span class="service-ended-badge">Sefer Yok</span>` : '';
 
       // Run badge (suppressed when service has ended — "koş" to a bus hours away makes no sense)
-      const runBadge = !opt.serviceEnded && opt.predictedMin <= 2 ? `<span class="run-badge">🏃 Koş!</span>` : '';
+      const runBadge = !opt.serviceEnded && opt.predictedMin <= 2 ? `<span class="run-badge">Koş!</span>` : '';
 
       const arrivalTime = Date.now() + opt.predictedMin * 60 * 1000;
 
       card.innerHTML = `
-        ${isBest ? '<div class="advice-card__best-tag">⭐ En İyi Seçenek</div>' : ''}
+        ${isBest ? '<div class="advice-card__best-tag">En İyi Seçenek</div>' : ''}
         ${endedBadge}
         ${lastBusBadge}
         ${runBadge}
@@ -246,14 +250,14 @@ const UI = (() => {
           <div class="advice-card__route-info">
             <span class="advice-card__route-num" style="background:${opt.routeColor}">${opt.routeId}</span>
             <div>
-              <div class="advice-card__dest">→ ${opt.destination} <span class="ml-badge">🧠 ML</span></div>
+              <div class="advice-card__dest">→ ${opt.destination} <span class="ml-badge">ML</span></div>
               <div class="advice-card__vehicle">${opt.vehicleId}</div>
             </div>
           </div>
           <div class="advice-card__time">
             ${opt.serviceEnded ? `
               <div class="advice-card__countdown advice-card__countdown--ended" style="color:#8b5cf6">
-                🌙 ${opt.firstBusTimeStr || '--:--'}
+                ${opt.firstBusTimeStr || '--:--'}
               </div>
             ` : `
               <div class="advice-card__countdown" id="cd-${idx}" style="color:${opt.routeColor}">
@@ -280,7 +284,7 @@ const UI = (() => {
           <div class="advice-card__metric">
             <div class="advice-card__metric-label">Koltuk</div>
             <span style="font-weight:600;color:${opt.seatsAvailable > 10 ? '#22c55e' : opt.seatsAvailable > 0 ? '#f59e0b' : '#ef4444'}">
-              🪑 ${opt.seatsAvailable}
+              ${opt.seatsAvailable}
             </span>
           </div>
           <div class="advice-card__metric">
@@ -359,9 +363,9 @@ const UI = (() => {
       card.style.animationDelay = `${idx * 60}ms`;
 
       const statusLabel = {
-        'on-time': '✅ On Time',
-        'delayed': '⚠️ Delayed',
-        'early': '⚡ Early',
+        'on-time': 'On Time',
+        'delayed': 'Delayed',
+        'early': 'Early',
       };
 
       const crowdColors = {
@@ -372,13 +376,13 @@ const UI = (() => {
       const crowdColor = crowdColors[arrival.occupancy] || '#888';
 
       const mlBadge = arrival.mlPowered
-        ? `<span class="ml-badge">🧠 ML</span>`
+        ? `<span class="ml-badge">ML</span>`
         : '';
 
       const arrivalTime = Date.now() + arrival.predictedMin * 60 * 1000;
 
       card.innerHTML = `
-        ${isRecommended ? '<div class="advice-card__best-tag">⭐ Best Option</div>' : ''}
+        ${isRecommended ? '<div class="advice-card__best-tag">Best Option</div>' : ''}
         <div class="advice-card__top">
           <div class="advice-card__route-info">
             <span class="advice-card__route-num" style="background:${arrival.routeColor}">${arrival.routeId}</span>
@@ -442,11 +446,11 @@ const UI = (() => {
         if (info && info.initialized) {
           const arrMAE = info.arrivalModel?.mae ?? '--';
           const crowdAcc = info.crowdModel?.accuracy ?? '--';
-          const source = info.dataSource === 'hackathon_real' ? '🏆 Real Sivas Data' : '🔬 Synthetic';
+          const source = info.dataSource === 'hackathon_real' ? 'Real Sivas Data' : 'Synthetic';
           const classes = info.crowdModel?.numClasses || 3;
           footer.innerHTML = `
             <div class="model-info__badge">
-              🧠 Random Forest ML · ${source} · ${info.arrivalModel?.trainSamples || 0} samples
+              Random Forest ML · ${source} · ${info.arrivalModel?.trainSamples || 0} samples
             </div>
             <div>
               Arrival MAE: <span class="model-info__stat">${arrMAE} min</span> ·
@@ -458,7 +462,7 @@ const UI = (() => {
         }
         // Still training — keep the loading badge visible and poll again.
         footer.innerHTML = `
-          <div class="model-info__badge">🧠 ML Engine Training... (Random Forest)</div>
+          <div class="model-info__badge">ML Engine Training... (Random Forest)</div>
           <div style="opacity:.7">Modeller hazırlanıyor — birkaç saniye sürebilir.</div>
         `;
         return false;
@@ -500,10 +504,10 @@ const UI = (() => {
     const title = document.getElementById('arrivalSectionTitle');
     const badge = document.getElementById('arrivalCount');
     if (mode === 'journey') {
-      if (title) title.textContent = '🗺️ Yolculuk Planı';
+      if (title) title.textContent = 'Yolculuk Planı';
       if (badge) badge.textContent = count != null ? `${count} seçenek` : '--';
     } else {
-      if (title) title.textContent = '🚍 Upcoming Arrivals';
+      if (title) title.textContent = 'Upcoming Arrivals';
       if (badge) badge.textContent = count != null ? `${count} buses` : '--';
     }
   }
@@ -543,7 +547,7 @@ const UI = (() => {
       .join('<span style="color:var(--text-muted);margin:0 2px">→</span>');
 
     const heroTime = journeyData.serviceEnded
-      ? `<span style="color:#8b5cf6">🌙 ${journeyData.firstBusTimeStr || 'Sefer Yok'}</span>`
+      ? `<span style="color:#8b5cf6">${journeyData.firstBusTimeStr || 'Sefer Yok'}</span>`
       : `<span style="font-size:1.6rem;font-weight:800;color:var(--accent-blue)">${journeyData.totalMin}<span style="font-size:0.7rem"> dk</span></span>`;
 
     banner.innerHTML = `
@@ -629,7 +633,7 @@ const UI = (() => {
     if (journeyData.mlPowered) {
       const mlDiv = document.createElement('div');
       mlDiv.style.cssText = 'text-align:center;margin-top:8px;font-size:10px;color:var(--text-muted)';
-      mlDiv.innerHTML = '<span class="ml-badge">🧠 ML</span> Bekleme süresi ML tahminidir';
+      mlDiv.innerHTML = '<span class="ml-badge">ML</span> Bekleme süresi ML tahminidir';
       container.appendChild(mlDiv);
     }
   }
