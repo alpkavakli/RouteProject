@@ -5,7 +5,7 @@ You're joining an in-progress hackathon submission. Read this end-to-end before 
 ## What this is
 RouteProject is our entry to a 2-week ML/product hackathon (2026-04-13 → 2026-04-27).
 Case: **Predictive Transit** — "When will my bus actually arrive, and should I take it?"
-Dataset: Sivas municipal bus data provided by the hackathon team (62 stops, 5 lines, ~13k trips, ~4.5k stop-arrival observations, ~3.6k passenger-flow rows).
+Dataset: Sivas municipal bus data provided by the hackathon team (118 stops, 5 lines, ~4.5k stop-arrival observations, ~3.6k passenger-flow rows).
 
 Deadlines:
 - 2026-04-16 — Checkpoint 1, idea only (feedback, not graded)
@@ -23,55 +23,102 @@ Most teams lose points on UX clarity and real ML usage. "Accuracy > fancy AI." E
 - ML: `ml-random-forest` npm package (Random Forest Regressor for arrivals, Classifier for crowd)
 - Frontend: vanilla JS modules (no framework) + Leaflet map
 - Docker compose (`docker-compose.yml`) for app + db
+- Tests: `node:test` built-in runner, 53 tests (`npm test`)
 
-Run: `docker compose up -d --build app` → http://localhost:3000 → pick Sivas → click any stop.
-First startup trains both models from real data (~2 min total).
+Run: `docker compose up -d --build` → http://localhost:3000 → pick Sivas → click any stop.
+First startup trains both models from real data (~125s total).
+If port 3306 conflict: `docker stop vak-vgs-db-1` (user's other project holds 3306).
 
-## What's already built
-1. **DB schema**: cities, stops, routes, route_stops, weather + hackathon_trips, hackathon_arrivals, hackathon_passenger_flow. Init is idempotent; Sivas backfill is safe to rerun.
-2. **CSV loader** (`db/load-csv.js`): parses 5 hackathon CSVs on first run, seeds a stable Sivas weather row from trip averages.
-3. **ML predictor** (`ml/predictor.js`):
-   - Arrival model: Random Forest Regressor, ~2.0 min MAE on real data.
-   - Crowd model: Random Forest Classifier, 5-class (empty/light/moderate/busy/crowded). Empty class has ~0 samples — known quirk.
-   - `predictArrivals(stop, routes, pool)` is async and pulls real `scheduledMin`, `recentDelay`, `segmentIndex`, `vehicleId`, `avgOccupancyPct`, `speedFactor`, and per-trip weather from hackathon_trips/hackathon_arrivals. Output is deterministic within the current minute — critical, it used to reroll on every click and we fixed it. Don't reintroduce `Math.random()` in the prediction path.
-4. **Smart advisor** (`ml/advisor.js`): generates stress score (0–100, labels Rahat/Normal/Yoğun/Stresli), seat turnover hint from boarding/alighting, Turkish recommendation chip (run/wait/board/alternative/last-bus). Endpoint: `GET /api/stops/:id/advice`.
-5. **Frontend** (`public/js/app.js`, `ui.js`, `data.js`; `public/css/components.css`): advice cards with hero countdown, occupancy bars, stress badge, recommendation chip, global advice banner. 5-class crowd card with probability bars. Auto-refresh every 30s.
+---
 
-## How the rendered card maps to the user
-Hero: big countdown + recommendation chip. That's the 1-second takeaway. Everything else (occupancy/seats/stress/factors/turnover note) is secondary rows — do not promote them to the top.
+## CURRENT STATE (2026-04-16, evening update)
 
-## Known state / quirks
-- DB volume is persistent across rebuilds. To fully reset: `docker compose down -v`.
-- Model cache is deleted on every startup (`server.js` start()) to force retraining — this wastes ~2 min but guarantees fresh models; fine for now.
-- `.env` is gitignored; credentials match `docker-compose.yml` (root/root, db `predictive_transit`).
-- Turkish strings in the UI are intentional — the dataset is Sivas and the target users are Turkish-speaking.
-- Non-Sivas cities still use the synthetic path with random scheduledMin. Only Sivas is real-data-backed.
+### What's DONE and working:
+1. **ML models** — RF Regressor (arrival delay, MAE 2.02min), RF Classifier (5-class crowd, 100% acc)
+2. **Smart Advisor** (`ml/advisor.js`) — stress scoring, seat turnover, 7-priority recommendation chips
+3. **Night service detection** — SERVICE_GAP_MIN=180, serviceEnded flag, moon badge, bestOption=-1
+4. **Test suite** — 53 tests: unit (predictor + advisor helpers with BVA/EP) + live integration
+5. **UX polish** — model info polls until trained, service-ended badge, run-badge suppression
+6. **Bus time bug fix** — `loadAllSchedules()` now uses `hackathon_trips` (352/day/line) as primary source, not sparse `hackathon_arrivals` (7/day/stop)
+7. **Journey Planner — FULL STACK COMPLETE:**
+   - Backend: `GET /api/journey?from=X&to=Y` — direct + transfer journeys
+   - Transfer support: walks <1km, dolmus/taxi for longer distances
+   - Frontend: destination search, journey cards (direct + transfer layouts), map highlighting
+   - Auto-refresh works in both arrivals and journey mode
+   - All 5 Sivas lines × any combination works (same-line direct, cross-line transfer)
 
-## Open work a fresh session might pick up
-- README/documentation refresh covering the advisor + real-data pipeline (high-value for scoring, currently stale).
-- Demo narrative / presentation outline for the 04-20 graded checkpoint.
-- Optional: live weather from an external API instead of the seeded trip average.
-- Optional: external route/GTFS data if we can find Sivas public data.
+#### API response shape (`GET /api/journey?from=STP-L01-04&to=STP-L01-12`):
+```json
+{
+  "from": { "id": "STP-L01-04", "name": "..." },
+  "to": { "id": "STP-L01-12", "name": "..." },
+  "journeys": [
+    {
+      "routeId": "L01",
+      "routeName": "...",
+      "routeColor": "#4f8cff",
+      "destination": "...",
+      "waitMin": 5,
+      "travelMin": 18,
+      "totalMin": 23,
+      "stops": 8,
+      "originOccupancyPct": 45,
+      "destOccupancyPct": 20,
+      "comfortTrend": "improving",
+      "stressScore": 35,
+      "stressLabel": "Normal",
+      "recommendation": { "action": "board", "text": "...", "icon": "✅", "priority": "ok" },
+      "serviceEnded": false,
+      "mlPowered": true
+    }
+  ],
+  "bestJourney": 0
+}
+```
+
+---
+
+## What's NEXT After Journey Planner Frontend
+
+### Feature #2: Delay Cascade Visualization
+- Model delay propagation using `cumulative_delay_min` from hackathon_arrivals
+- Route line on map: green→red gradient showing predicted delay at each stop
+- New endpoint: `GET /api/routes/:id/delay-cascade`
+- See `memory/project_differentiation_ideas.md` for details on all 5 features
+
+### Documentation
+- Update README with Journey Planner
+- Update DOCUMENTATION.md
+- Demo narrative for 04-20 checkpoint
+
+---
+
+## Key Files
+
+| File | Purpose |
+|------|---------|
+| `server.js` | Express routes, all API endpoints |
+| `ml/predictor.js` | Arrival + crowd models, `predictArrivals()`, `predictCrowd()` |
+| `ml/advisor.js` | Stress scoring, recommendations, `generateAdvice()` |
+| `ml/journey.js` | Journey planner: direct + transfer routing, `planJourney()` |
+| `ml/arrival-model.js` | RF Regressor (delay prediction) |
+| `ml/crowd-model.js` | RF Classifier (5-class crowd) |
+| `ml/data-generator.js` | Synthetic + real data loaders |
+| `public/js/app.js` | App controller (init, city switch, stop selection, refresh) |
+| `public/js/ui.js` | All rendering (weather, crowd, arrivals, advice, journey, model info) |
+| `public/js/data.js` | DataService — fetch wrapper for all API calls |
+| `public/js/map.js` | Leaflet map, stop markers, route lines, journey highlighting |
+| `public/css/components.css` | Card styles, badges, chips |
+| `public/css/advice.css` | Advice card specific styles |
+| `test/*.test.js` | Test suite (`npm test`) |
+| `JOURNEY_PLANNER_UX.md` | Full UX spec with scenarios |
 
 ## Working-with-the-user notes
 - Windows host, Git Bash shell. Use forward slashes in paths.
-- User switches between Claude Code and Antigravity. Responses should assume cold context.
 - User prefers terse output, direct answers, no preambles.
-- Before making risky changes (destructive git, forced rebuilds that lose DB state), confirm first.
-- When in doubt about scope: "simple and complete" beats "complex and half-working." This is an explicit hackathon strategy rule for this project.
-
-## I added (teammate 1) this previous prompt to give an idea to what to do next:
-Saved. The Q&A context is now in memory and will shape suggestions in        future sessions.
-                                                                               Three things worth flagging before we move on:
-                                                                             
-  1. Our current system is already well-aligned with the rubric — real data,
-  real ML, real UX, deterministic outputs, a unique "advice/stress" angle    
-  most teams won't have. The risk now is not doing more but polishing
-  less-visible things (documentation, demo narrative).
-  2. Documentation is load-bearing and we're thin on it. DOCUMENTATION.md    
-  exists from an earlier commit, but post-advisor work hasn't been reflected.
-   Before 04-20 I'd recommend one tight README update: what the system does  
-  in 3 sentences, how to run it, what the advice engine signals mean.        
-  3. The stability fix is still uncommitted. Want me to commit + push that   
-  first (small, focused commit), then we decide on next moves (docs, external
-   data, demo polish)?
+- Before making risky changes (destructive git, forced rebuilds), confirm first.
+- "Simple and complete" beats "complex and half-working." Ship a reliable demo.
+- UX rule: every card needs a 1-second hero takeaway.
+- Turkish UI strings are intentional — target users are Turkish.
+- Only Sivas has real data. Other cities use synthetic fallback.
+- Don't reintroduce `Math.random()` in the prediction path — outputs must be deterministic within the current minute.

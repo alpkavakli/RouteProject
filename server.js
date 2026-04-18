@@ -8,6 +8,7 @@ const helmet = require('helmet');
 const path = require('path');
 const predictor = require('./ml/predictor');
 const advisor = require('./ml/advisor');
+const journey = require('./ml/journey');
 const { initDatabase } = require('./db/init');
 const { loadHackathonData, ensureSivasWeatherSeeded } = require('./db/load-csv');
 
@@ -462,6 +463,51 @@ app.get('/api/stops/:id/advice', async (req, res) => {
 
     const advice = await advisor.generateAdvice(stop, arrivals, crowd, pool, routes);
     res.json(advice);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Journey Planner ────────────────────────────────────────────────────
+
+app.get('/api/journey', async (req, res) => {
+  try {
+    const { from, to } = req.query;
+    if (!from || !to) return res.status(400).json({ error: 'from and to query params required' });
+    if (from === to) return res.status(400).json({ error: 'origin and destination must be different' });
+
+    const [fromStops, toStops] = await Promise.all([
+      queryStops({ id: from }),
+      queryStops({ id: to }),
+    ]);
+    if (fromStops.length === 0) return res.status(404).json({ error: `Origin stop "${from}" not found` });
+    if (toStops.length === 0) return res.status(404).json({ error: `Destination stop "${to}" not found` });
+
+    const fromStop = fromStops[0];
+    const toStop = toStops[0];
+
+    // Ensure weather
+    const [wRows] = await pool.execute(
+      `SELECT w.*, c.name AS city FROM weather w
+       JOIN cities c ON w.city_id = c.id
+       WHERE LOWER(c.name) = LOWER(?)
+       ORDER BY w.created_at DESC LIMIT 1`,
+      [fromStop.city]
+    );
+    if (wRows.length > 0) {
+      predictor.setWeather({ temp: wRows[0].temp, precipitation: wRows[0].precipitation, windSpeed: wRows[0].wind_speed });
+    } else {
+      predictor.setWeather(generateRandomWeather(fromStop.city));
+    }
+
+    const [routes, allStops] = await Promise.all([
+      queryRoutes({ city: fromStop.city }),
+      queryStops({ city: fromStop.city }),
+    ]);
+    const arrivals = await predictor.predictArrivals(fromStop, routes, pool);
+
+    const result = await journey.planJourney(fromStop, toStop, arrivals, routes, pool, allStops);
+    res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -24,6 +24,7 @@
   <link rel="stylesheet" href="/css/base.css">
   <link rel="stylesheet" href="/css/components.css">
   <link rel="stylesheet" href="/css/advice.css">
+  <link rel="stylesheet" href="/css/journey.css">
 
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='80' font-size='80'>🚌</text></svg>">
 </head>
@@ -101,6 +102,22 @@
           </div>
           <div class="panel__stop-city" id="panelStopCity">--</div>
           <div class="panel__routes" id="panelRoutes"></div>
+
+          <!-- Journey Planner destination search -->
+          <div class="journey-search" id="journeySearch" style="display:none;">
+            <div class="journey-search__label">🗺️ Nereye gidiyorsun?</div>
+            <div class="journey-search__wrap">
+              <input
+                type="text"
+                class="journey-search__input"
+                id="journeyDestInput"
+                placeholder="Varış durağını ara..."
+                autocomplete="off"
+              >
+              <button class="journey-search__clear" id="journeyClearBtn" title="Temizle">✕</button>
+            </div>
+            <div class="journey-search__results" id="journeyDestResults"></div>
+          </div>
         </div>
 
         <div class="panel__body" id="panelBody">
@@ -111,9 +128,9 @@
           </div>
           <div id="crowdCard"></div>
 
-          <!-- Arrivals Section -->
-          <div class="section-header">
-            <span class="section-title">🚍 Upcoming Arrivals</span>
+          <!-- Arrivals / Journey Section -->
+          <div class="section-header" id="arrivalSectionHeader">
+            <span class="section-title" id="arrivalSectionTitle">🚍 Upcoming Arrivals</span>
             <span class="section-badge" id="arrivalCount">--</span>
           </div>
           <div id="arrivalCards"></div>

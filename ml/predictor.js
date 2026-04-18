@@ -42,28 +42,51 @@ function formatTimeHHMM(t) {
 // and the overnight case (past midnight but before the next day's first trip).
 const SERVICE_GAP_MIN = 180;
 
-// Batch-load schedule data for ALL lines at a given stop in ~3 SQL round-trips
-// (was N+1: up to 5 queries × 5 lines = 25 round-trips per advice request).
+// Batch-load schedule data for ALL lines at a given stop.
+// Uses hackathon_trips (complete schedule, 350+ trips/day/line) as the primary
+// source and interpolates per-stop arrival times from planned_departure +
+// stop position. Enriches with hackathon_arrivals detail when available (that
+// table is a sparse sample — often only 7 trips/day/line at a given stop).
 async function loadAllSchedules(pool, stopId, lineIds, dayOfWeek, nowMinutes) {
   if (!lineIds || lineIds.length === 0) return {};
-  const nowTimeStr = `${String(Math.floor(nowMinutes / 60)).padStart(2, '0')}:${String(Math.floor(nowMinutes % 60)).padStart(2, '0')}:00`;
 
-  // 1. Fetch up to 3 upcoming arrivals per line in one query (today's DOW, after now)
   const placeholders = lineIds.map(() => '?').join(',');
-  const [allRows] = await pool.execute(
-    `SELECT a.line_id, a.trip_id, a.scheduled_arrival, a.stop_sequence,
-            a.delay_min AS historical_delay, a.passengers_waiting,
-            t.avg_occupancy_pct, t.speed_factor, t.bus_capacity,
-            t.departure_delay_min, t.temperature_c, t.precipitation_mm,
-            t.traffic_level, t.day_of_week
-     FROM hackathon_arrivals a
-     JOIN hackathon_trips t ON a.trip_id = t.trip_id
-     WHERE a.stop_id = ? AND a.line_id IN (${placeholders})
-     ORDER BY a.line_id, a.scheduled_arrival ASC`,
+
+  // 1. Get this stop's position on each line (0-based)
+  const [stopPositions] = await pool.execute(
+    `SELECT route_id AS line_id, stop_order
+     FROM route_stops
+     WHERE stop_id = ? AND route_id IN (${placeholders})`,
     [stopId, ...lineIds]
   );
+  const posByLine = {};
+  for (const r of stopPositions) posByLine[r.line_id] = Number(r.stop_order);
 
-  // 2. Batch avg delay per line (one query for all lines)
+  // 2. Fetch ALL trips for these lines on this day from hackathon_trips
+  //    This is the COMPLETE schedule (350+ trips per line per day).
+  const [tripRows] = await pool.execute(
+    `SELECT trip_id, line_id, day_of_week, planned_departure,
+            departure_delay_min, planned_duration_min, num_stops,
+            avg_occupancy_pct, speed_factor, bus_capacity,
+            temperature_c, precipitation_mm, traffic_level
+     FROM hackathon_trips
+     WHERE line_id IN (${placeholders})
+     ORDER BY line_id, planned_departure ASC`,
+    [...lineIds]
+  );
+
+  // 3. Optionally load per-stop detail from hackathon_arrivals (sparse)
+  const [arrivalRows] = await pool.execute(
+    `SELECT a.trip_id, a.line_id, a.scheduled_arrival, a.stop_sequence,
+            a.delay_min AS historical_delay, a.passengers_waiting
+     FROM hackathon_arrivals a
+     WHERE a.stop_id = ? AND a.line_id IN (${placeholders})`,
+    [stopId, ...lineIds]
+  );
+  const arrivalByTrip = {};
+  for (const r of arrivalRows) arrivalByTrip[r.trip_id] = r;
+
+  // 4. Batch avg delay per line
   const [delayRows] = await pool.execute(
     `SELECT line_id, AVG(delay_min) AS avg_delay
      FROM hackathon_arrivals
@@ -74,64 +97,95 @@ async function loadAllSchedules(pool, stopId, lineIds, dayOfWeek, nowMinutes) {
   const delayByLine = {};
   for (const r of delayRows) delayByLine[r.line_id] = Number(r.avg_delay) || 0;
 
-  // 3. Partition rows by line and compute per-line results in JS
+  // 5. For each line, interpolate arrival time at the target stop and pick candidates
   const byLine = {};
-  for (const row of allRows) {
-    if (!byLine[row.line_id]) byLine[row.line_id] = [];
-    byLine[row.line_id].push(row);
+  for (const trip of tripRows) {
+    if (!byLine[trip.line_id]) byLine[trip.line_id] = [];
+
+    const stopOrder = posByLine[trip.line_id];
+    if (stopOrder == null) continue;
+
+    const numStops = Number(trip.num_stops) || 14;
+    const segments = Math.max(1, numStops - 1);
+    const durationMin = Number(trip.planned_duration_min) || 30;
+    const depMinutes = timeToMinutes(trip.planned_departure);
+
+    // Interpolate: arrival at this stop = departure + fraction of total duration
+    const estimatedArrivalMin = depMinutes + (stopOrder / segments) * durationMin;
+
+    // If we have per-stop detail from hackathon_arrivals, prefer that timing
+    const detail = arrivalByTrip[trip.trip_id];
+    const actualArrivalMin = detail ? timeToMinutes(detail.scheduled_arrival) : null;
+    const arrivalMin = actualArrivalMin || estimatedArrivalMin;
+
+    byLine[trip.line_id].push({
+      ...trip,
+      arrivalMin,
+      estimatedArrivalMin,
+      stopSequence: detail ? (detail.stop_sequence || stopOrder + 1) : stopOrder + 1,
+      historicalDelay: detail ? (Number(detail.historical_delay) || 0) : 0,
+      passengersWaiting: detail ? (Number(detail.passengers_waiting) || 0) : 0,
+      hasDetail: !!detail,
+    });
   }
 
   const results = {};
   for (const lineId of lineIds) {
-    const lineRows = byLine[lineId] || [];
-    if (lineRows.length === 0) { results[lineId] = null; continue; }
+    const lineTrips = byLine[lineId] || [];
+    if (lineTrips.length === 0) { results[lineId] = null; continue; }
 
     let serviceEnded = false;
 
-    // Filter: today's DOW, after now
-    let candidates = lineRows.filter(
-      r => Number(r.day_of_week) === dayOfWeek && r.scheduled_arrival > nowTimeStr
+    // Filter: today's DOW, arriving after now
+    let candidates = lineTrips.filter(
+      r => Number(r.day_of_week) === dayOfWeek && r.arrivalMin > nowMinutes
     );
 
-    // Fallback 1: today's DOW, any time (wrap to first trip)
+    // Fallback: today's DOW, any time (wrap to first trip tomorrow)
     if (candidates.length === 0) {
       serviceEnded = true;
-      candidates = lineRows.filter(r => Number(r.day_of_week) === dayOfWeek);
+      candidates = lineTrips.filter(r => Number(r.day_of_week) === dayOfWeek);
     }
-    // Fallback 2: any DOW
+    // Fallback: any DOW
     if (candidates.length === 0) {
-      candidates = lineRows;
+      candidates = lineTrips;
     }
     if (candidates.length === 0) { results[lineId] = null; continue; }
 
-    // Take first 3
+    // Sort by arrival time and take first 3
+    candidates.sort((a, b) => a.arrivalMin - b.arrivalMin);
     candidates = candidates.slice(0, 3);
     const primary = candidates[0];
-    const schedMinutes = timeToMinutes(primary.scheduled_arrival);
-    let minutesUntil = schedMinutes - nowMinutes;
+
+    let minutesUntil = primary.arrivalMin - nowMinutes;
     if (minutesUntil <= 0) minutesUntil += 24 * 60;
     if (minutesUntil >= SERVICE_GAP_MIN) serviceEnded = true;
 
-    const nextBusSchedMinutes = candidates[1] ? timeToMinutes(candidates[1].scheduled_arrival) : null;
-    const minutesToNextBus = nextBusSchedMinutes != null
-      ? Math.max(1, Math.round(nextBusSchedMinutes - schedMinutes))
+    const nextBusMin = candidates[1] ? candidates[1].arrivalMin : null;
+    const minutesToNextBus = nextBusMin != null
+      ? Math.max(1, Math.round(nextBusMin - primary.arrivalMin))
       : null;
 
-    // Last trip check: are there any later trips today for this line?
-    const laterCount = lineRows.filter(
-      r => Number(r.day_of_week) === dayOfWeek && r.scheduled_arrival > primary.scheduled_arrival
+    // Last trip: are there later trips today for this line?
+    const laterCount = lineTrips.filter(
+      r => Number(r.day_of_week) === dayOfWeek && r.arrivalMin > primary.arrivalMin
     ).length;
     const isLastTripToday = !serviceEnded && laterCount === 0;
+
+    // Format arrival time for display
+    const arrH = Math.floor(primary.arrivalMin / 60) % 24;
+    const arrM = Math.floor(primary.arrivalMin % 60);
+    const arrTimeStr = `${String(arrH).padStart(2, '0')}:${String(arrM).padStart(2, '0')}`;
 
     results[lineId] = {
       tripId: primary.trip_id,
       scheduledMin: Math.max(1, Math.round(minutesUntil)),
-      stopSequence: primary.stop_sequence || 1,
+      stopSequence: primary.stopSequence || 1,
       avgOccupancyPct: Number(primary.avg_occupancy_pct) || null,
       speedFactor: Number(primary.speed_factor) || 1,
       busCapacity: Number(primary.bus_capacity) || 60,
-      historicalDelay: Number(primary.historical_delay) || 0,
-      passengersWaiting: Number(primary.passengers_waiting) || 0,
+      historicalDelay: primary.historicalDelay,
+      passengersWaiting: primary.passengersWaiting,
       recentAvgDelay: delayByLine[lineId] || 0,
       departureDelayMin: Number(primary.departure_delay_min) || 0,
       tripTemperatureC: Number(primary.temperature_c),
@@ -140,9 +194,9 @@ async function loadAllSchedules(pool, stopId, lineIds, dayOfWeek, nowMinutes) {
       minutesToNextBus,
       serviceEnded,
       isLastTripToday,
-      firstBusTimeStr: serviceEnded ? formatTimeHHMM(primary.scheduled_arrival) : null,
+      firstBusTimeStr: serviceEnded ? arrTimeStr : null,
       firstBusHoursUntil: serviceEnded ? Math.round(minutesUntil / 60 * 10) / 10 : null,
-      lastBusTimeStr: isLastTripToday ? formatTimeHHMM(primary.scheduled_arrival) : null,
+      lastBusTimeStr: isLastTripToday ? arrTimeStr : null,
     };
   }
   return results;

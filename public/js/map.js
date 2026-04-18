@@ -4,6 +4,7 @@ const MapController = (() => {
   let map;
   let markers = {};
   let routePolylines = [];
+  let journeyHighlights = [];
   let selectedStopId = null;
   let onStopSelect = null;
   let citiesMap = {};
@@ -134,5 +135,61 @@ const MapController = (() => {
     return selectedStopId;
   }
 
-  return { init, setCities, renderStops, selectStop, flyToCity, drawRoutes, getSelectedStopId };
+  function highlightJourney(journeyData) {
+    clearJourneyHighlight();
+
+    if (!journeyData || !journeyData.legs || journeyData.legs.length === 0) return;
+    if (journeyData.serviceEnded) return;
+
+    const allCoords = [];
+
+    // Draw each leg as a separate polyline with appropriate style
+    for (const leg of journeyData.legs) {
+      if (leg.type === 'bus' && leg.stops) {
+        // Use pathCoords to get lat/lng for each stop in this leg
+        const coords = [];
+        for (const s of leg.stops) {
+          const pc = (journeyData.pathCoords || []).find(p => p.id === s.id);
+          if (pc) coords.push([pc.lat, pc.lng]);
+        }
+        if (coords.length >= 2) {
+          const line = L.polyline(coords, {
+            color: leg.routeColor || '#4f8cff',
+            weight: 5,
+            opacity: 0.85,
+          }).addTo(map);
+          journeyHighlights.push(line);
+          allCoords.push(...coords);
+        }
+      } else if (leg.from && leg.to) {
+        // Transfer: dashed line between transfer stops
+        const fromPc = (journeyData.pathCoords || []).find(p => p.id === leg.from.id);
+        const toPc = (journeyData.pathCoords || []).find(p => p.id === leg.to.id);
+        if (fromPc && toPc) {
+          const coords = [[fromPc.lat, fromPc.lng], [toPc.lat, toPc.lng]];
+          const line = L.polyline(coords, {
+            color: '#f59e0b',
+            weight: 4,
+            opacity: 0.7,
+            dashArray: '8 8',
+          }).addTo(map);
+          journeyHighlights.push(line);
+          allCoords.push(...coords);
+        }
+      }
+    }
+
+    // Fit map to show entire journey path
+    if (allCoords.length >= 2) {
+      const bounds = L.latLngBounds(allCoords);
+      map.fitBounds(bounds.pad(0.2), { duration: 0.8, maxZoom: 15 });
+    }
+  }
+
+  function clearJourneyHighlight() {
+    journeyHighlights.forEach(l => map.removeLayer(l));
+    journeyHighlights = [];
+  }
+
+  return { init, setCities, renderStops, selectStop, flyToCity, drawRoutes, getSelectedStopId, highlightJourney, clearJourneyHighlight };
 })();

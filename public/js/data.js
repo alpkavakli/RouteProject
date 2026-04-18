@@ -44,6 +44,10 @@ const DataService = {
     return await safeFetch(`${API_BASE}/api/hackathon/stats`);
   },
 
+  async getJourney(fromId, toId) {
+    return await safeFetch(`${API_BASE}/api/journey?from=${encodeURIComponent(fromId)}&to=${encodeURIComponent(toId)}`);
+  },
+
   async getRoutes(city) {
     const url = city ? `${API_BASE}/api/routes?city=${city}` : `${API_BASE}/api/routes`;
     return (await safeFetch(url)) || [];

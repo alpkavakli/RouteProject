@@ -494,6 +494,146 @@ const UI = (() => {
     `;
   }
 
+  // ─── Journey Cards ──────────────────────────────────────────────────
+
+  function setArrivalSectionMode(mode, count) {
+    const title = document.getElementById('arrivalSectionTitle');
+    const badge = document.getElementById('arrivalCount');
+    if (mode === 'journey') {
+      if (title) title.textContent = '🗺️ Yolculuk Planı';
+      if (badge) badge.textContent = count != null ? `${count} seçenek` : '--';
+    } else {
+      if (title) title.textContent = '🚍 Upcoming Arrivals';
+      if (badge) badge.textContent = count != null ? `${count} buses` : '--';
+    }
+  }
+
+  function renderJourney(journeyData) {
+    clearCountdowns();
+    const container = document.getElementById('arrivalCards');
+    container.innerHTML = '';
+
+    if (!journeyData) return;
+
+    // No path found
+    if (!journeyData.legs || journeyData.legs.length === 0) {
+      setArrivalSectionMode('journey', 0);
+      container.innerHTML = `
+        <div class="journey-empty animate-fade-in">
+          <div class="journey-empty__icon">🚫</div>
+          <div class="journey-empty__title">${journeyData.message || 'Güzergah bulunamadı'}</div>
+          <div class="journey-empty__desc">
+            ${journeyData.from?.name || ''} → ${journeyData.to?.name || ''} arasında
+            uygun güzergah yok.
+          </div>
+        </div>
+      `;
+      return;
+    }
+
+    setArrivalSectionMode('journey', journeyData.busStopCount + ' durak');
+
+    // ─── Hero Banner ──────────────────────────────────────────
+    const banner = document.createElement('div');
+    banner.className = 'journey-mode-banner animate-fade-in';
+
+    const routeBadges = journeyData.legs
+      .filter(l => l.type === 'bus')
+      .map(l => `<span class="journey-card__route-num" style="background:${l.routeColor};font-size:11px;padding:2px 8px">${l.routeId}</span>`)
+      .join('<span style="color:var(--text-muted);margin:0 2px">→</span>');
+
+    const heroTime = journeyData.serviceEnded
+      ? `<span style="color:#8b5cf6">🌙 ${journeyData.firstBusTimeStr || 'Sefer Yok'}</span>`
+      : `<span style="font-size:1.6rem;font-weight:800;color:var(--accent-blue)">${journeyData.totalMin}<span style="font-size:0.7rem"> dk</span></span>`;
+
+    banner.innerHTML = `
+      <div style="flex:1">
+        <div class="journey-mode-banner__text">
+          <span>${journeyData.from?.name || '...'}</span> → <span>${journeyData.to?.name || '...'}</span>
+        </div>
+        <div style="margin-top:4px;display:flex;align-items:center;gap:4px">
+          ${routeBadges}
+          ${journeyData.hasTransfer ? '<span style="font-size:10px;color:var(--text-muted);margin-left:4px">🔄 Aktarmalı</span>' : ''}
+        </div>
+      </div>
+      <div style="text-align:right">${heroTime}</div>
+    `;
+    container.appendChild(banner);
+
+    // ─── Recommendation Chip ─────────────────────────────────
+    const rec = journeyData.recommendation;
+    if (rec) {
+      const recPriorityColors = {
+        urgent: '#ef4444', critical: '#991b1b', suggestion: '#3b82f6',
+        info: '#8b5cf6', ok: '#22c55e', warning: '#f59e0b',
+      };
+      const recColor = recPriorityColors[rec.priority] || '#3b82f6';
+      const chip = document.createElement('div');
+      chip.className = 'recommendation-chip animate-slide-up';
+      chip.style.cssText = `background:${recColor}15;border:1px solid ${recColor}30;color:${recColor};margin-bottom:12px`;
+      chip.innerHTML = `<span class="recommendation-chip__icon">${rec.icon}</span><span class="recommendation-chip__text">${rec.text}</span>`;
+      container.appendChild(chip);
+    }
+
+    // ─── Leg-by-Leg Path View ─────────────────────────────────
+    const pathCard = document.createElement('div');
+    pathCard.className = 'journey-path-card animate-slide-up';
+
+    let pathHTML = '<div class="journey-path">';
+
+    journeyData.legs.forEach((leg, legIdx) => {
+      if (leg.type === 'bus') {
+        // Bus leg header
+        pathHTML += `
+          <div class="journey-path__leg-header">
+            <span class="journey-card__route-num" style="background:${leg.routeColor};font-size:11px;padding:2px 8px">${leg.routeId}</span>
+            <span style="font-size:var(--fs-xs);color:var(--text-secondary)">${leg.routeName}</span>
+            <span style="font-size:var(--fs-xs);color:var(--text-muted);margin-left:auto">
+              ${leg.waitMin != null ? leg.waitMin + ' dk bekle + ' : ''}${leg.rideMin} dk
+            </span>
+          </div>
+        `;
+        // Stop list
+        leg.stops.forEach((stop, si) => {
+          const isFirst = si === 0;
+          const isLast = si === leg.stops.length - 1;
+          const dotClass = isFirst ? 'origin' : isLast ? 'dest' : '';
+          pathHTML += `
+            <div class="journey-path__stop ${dotClass}">
+              <div class="journey-path__dot" style="border-color:${leg.routeColor}"></div>
+              <div class="journey-path__line" style="background:${leg.routeColor}"></div>
+              <span class="journey-path__stop-name">${stop.name}</span>
+            </div>
+          `;
+        });
+      } else {
+        // Transfer leg (walk / dolmus)
+        const icon = leg.type === 'dolmus' ? '🚐' : '🚶';
+        const label = leg.type === 'dolmus'
+          ? `${leg.transferMin} dk dolmuş/taksi (${(leg.distM/1000).toFixed(1)}km)`
+          : `${leg.transferMin} dk yürüyüş (${leg.distM}m)`;
+        pathHTML += `
+          <div class="journey-path__transfer">
+            <div class="journey-path__transfer-icon">${icon}</div>
+            <span>${label}</span>
+          </div>
+        `;
+      }
+    });
+
+    pathHTML += '</div>';
+    pathCard.innerHTML = pathHTML;
+    container.appendChild(pathCard);
+
+    // ML badge
+    if (journeyData.mlPowered) {
+      const mlDiv = document.createElement('div');
+      mlDiv.style.cssText = 'text-align:center;margin-top:8px;font-size:10px;color:var(--text-muted)';
+      mlDiv.innerHTML = '<span class="ml-badge">🧠 ML</span> Bekleme süresi ML tahminidir';
+      container.appendChild(mlDiv);
+    }
+  }
+
   return {
     renderWeather,
     renderSearchResults,
@@ -502,9 +642,11 @@ const UI = (() => {
     renderCrowd,
     renderArrivals,
     renderAdvice,
+    renderJourney,
     renderModelInfo,
     showArrivalsLoading,
     showCrowdLoading,
     clearCountdowns,
+    setArrivalSectionMode,
   };
 })();
