@@ -46,6 +46,10 @@ const DataService = {
     return await safeFetch(url);
   },
 
+  async getLiveBuses() {
+    return await safeFetch(`${API_BASE}/api/live-buses`);
+  },
+
   async getHackathonStats() {
     return await safeFetch(`${API_BASE}/api/hackathon/stats`);
   },

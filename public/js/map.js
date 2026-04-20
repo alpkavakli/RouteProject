@@ -10,6 +10,7 @@ const MapController = (() => {
   let onStopSelect = null;
   let citiesMap = {};
   let tileLayer = null;
+  let liveBusMarkers = {};  // tripKey → L.marker
 
   const TILE_URLS = {
     light: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
@@ -25,10 +26,20 @@ const MapController = (() => {
 
   const BUS_ICON_SVG = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M4 16c0 .88.39 1.67 1 2.22V20c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h8v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1.78c.61-.55 1-1.34 1-2.22V6c0-3.5-3.58-4-8-4s-8 .5-8 4v10zm3.5 1c-.83 0-1.5-.67-1.5-1.5S6.67 14 7.5 14s1.5.67 1.5 1.5S8.33 17 7.5 17zm9 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm1.5-6H6V6h12v5z"/></svg>`;
 
-  function createStopIcon(isSelected) {
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c => (
+      { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+    ));
+  }
+
+  function createStopIcon(stop, isSelected) {
+    const name = escapeHtml(stop.name || '');
     return L.divIcon({
-      className: '',
-      html: `<div class="stop-marker ${isSelected ? 'selected' : ''}">${BUS_ICON_SVG}</div>`,
+      className: 'stop-marker-wrap',
+      html: `
+        <div class="stop-marker-pin ${isSelected ? 'selected' : ''}">${BUS_ICON_SVG}</div>
+        <div class="stop-marker-label ${isSelected ? 'selected' : ''}" title="${name}">${name}</div>
+      `,
       iconSize: [32, 32],
       iconAnchor: [16, 16],
       popupAnchor: [0, -20],
@@ -59,6 +70,17 @@ const MapController = (() => {
 
     // Position zoom controls
     map.zoomControl.setPosition('bottomright');
+
+    // Hide stop-name labels at low zoom so the map doesn't become a text wall.
+    // Threshold 14 matches Google Maps' transit label density heuristic.
+    const LABEL_ZOOM = 14;
+    const syncLabelVisibility = () => {
+      const container = map.getContainer();
+      if (map.getZoom() < LABEL_ZOOM) container.classList.add('hide-stop-labels');
+      else container.classList.remove('hide-stop-labels');
+    };
+    map.on('zoomend', syncLabelVisibility);
+    syncLabelVisibility();
   }
 
   function setTheme(theme) {
@@ -76,7 +98,7 @@ const MapController = (() => {
     stops.forEach(stop => {
       const isSelected = stop.id === selectedStopId;
       const marker = L.marker([stop.lat, stop.lng], {
-        icon: createStopIcon(isSelected),
+        icon: createStopIcon(stop, isSelected),
       });
 
       marker.bindPopup(`
@@ -93,6 +115,7 @@ const MapController = (() => {
         selectStop(stop.id);
       });
 
+      marker.stopData = stop;
       marker.addTo(map);
       markers[stop.id] = marker;
     });
@@ -104,10 +127,10 @@ const MapController = (() => {
 
     // Update icons
     if (prevId && markers[prevId]) {
-      markers[prevId].setIcon(createStopIcon(false));
+      markers[prevId].setIcon(createStopIcon(markers[prevId].stopData, false));
     }
     if (markers[stopId]) {
-      markers[stopId].setIcon(createStopIcon(true));
+      markers[stopId].setIcon(createStopIcon(markers[stopId].stopData, true));
       markers[stopId].closePopup();
 
       const ll = markers[stopId].getLatLng();
@@ -258,5 +281,81 @@ const MapController = (() => {
     cascadeLayers = [];
   }
 
-  return { init, setCities, renderStops, selectStop, flyToCity, drawRoutes, getSelectedStopId, highlightJourney, clearJourneyHighlight, showCascade, clearCascade, setTheme };
+  // ─── Live bus markers ─────────────────────────────────────────────
+  // Buses are painted as colored chips with the line code inside and an
+  // outer ring tinted by delay (green/amber/red). Movement is animated
+  // via CSS transition on the Leaflet layer's transform — smooth without
+  // needing requestAnimationFrame.
+
+  function delayTier(delayMin) {
+    if (delayMin <= 1)  return 'ontime';
+    if (delayMin <= 4)  return 'late';
+    return 'verylate';
+  }
+
+  function createBusIcon(bus) {
+    const tier = delayTier(bus.delayMin);
+    const label = (bus.lineId || '').replace(/^L0*/, '') || bus.lineId || '?';
+    const delayTxt = bus.delayMin > 0
+      ? `+${bus.delayMin.toFixed(1)}`
+      : bus.delayMin.toFixed(1);
+    return L.divIcon({
+      className: 'live-bus-wrap',
+      html: `
+        <div class="live-bus live-bus--${tier}" style="--bus-color:${bus.color}">
+          <div class="live-bus__chip">${label}</div>
+          <div class="live-bus__delay">${delayTxt}</div>
+        </div>
+      `,
+      iconSize: [44, 28],
+      iconAnchor: [22, 14],
+    });
+  }
+
+  function renderLiveBuses(buses) {
+    if (!map) return;
+    const seen = new Set();
+
+    for (const bus of buses) {
+      seen.add(bus.tripKey);
+      const existing = liveBusMarkers[bus.tripKey];
+      if (existing) {
+        // Smooth slide to new coordinates. The CSS .live-bus-wrap
+        // transition handles the visual interpolation.
+        existing.setLatLng([bus.lat, bus.lng]);
+        existing.setIcon(createBusIcon(bus));
+        existing.busData = bus;
+      } else {
+        const m = L.marker([bus.lat, bus.lng], {
+          icon: createBusIcon(bus),
+          zIndexOffset: 800,
+          interactive: true,
+        });
+        m.bindTooltip(
+          `<strong>${bus.lineId}</strong> · ${bus.lineName}<br>Next stop: ${bus.nextStop}<br>Delay: ${bus.delayMin > 0 ? '+' : ''}${bus.delayMin} min`,
+          { direction: 'top', offset: [0, -8], opacity: 0.95 }
+        );
+        m.busData = bus;
+        m.addTo(map);
+        liveBusMarkers[bus.tripKey] = m;
+      }
+    }
+
+    // Remove buses that are no longer active.
+    for (const key of Object.keys(liveBusMarkers)) {
+      if (!seen.has(key)) {
+        map.removeLayer(liveBusMarkers[key]);
+        delete liveBusMarkers[key];
+      }
+    }
+  }
+
+  function clearLiveBuses() {
+    for (const key of Object.keys(liveBusMarkers)) {
+      map.removeLayer(liveBusMarkers[key]);
+    }
+    liveBusMarkers = {};
+  }
+
+  return { init, setCities, renderStops, selectStop, flyToCity, drawRoutes, getSelectedStopId, highlightJourney, clearJourneyHighlight, showCascade, clearCascade, setTheme, renderLiveBuses, clearLiveBuses };
 })();

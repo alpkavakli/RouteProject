@@ -10,6 +10,7 @@ const predictor = require('./ml/predictor');
 const advisor = require('./ml/advisor');
 const journey = require('./ml/journey');
 const cascade = require('./ml/cascade');
+const live = require('./ml/live');
 const { initDatabase } = require('./db/init');
 const { loadHackathonData, ensureSivasWeatherSeeded } = require('./db/load-csv');
 
@@ -507,6 +508,19 @@ app.get('/api/stops/:id/at', async (req, res) => {
       options,
       bestMatch,
     });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Live bus positions ────────────────────────────────────────────────
+// Returns every bus currently in motion (at server-time or an override).
+// Positions are derived from the schedule + ML-predicted delay, not a
+// GPS feed. See ml/live.js for the full pipeline.
+app.get('/api/live-buses', async (req, res) => {
+  try {
+    const buses = await live.getActiveBuses(pool, { limit: 120 });
+    res.json({ count: buses.length, now: new Date().toISOString(), buses });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

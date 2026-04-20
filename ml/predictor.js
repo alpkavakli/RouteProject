@@ -792,6 +792,9 @@ function getModelInfo() {
 
 module.exports = {
   init, setWeather, predictArrivals, predictAtTime, predictCrowd, getModelInfo,
+  // Exposed for the live-bus engine (ml/live.js) — read-only use of the
+  // historical priors that init() already loaded into memory.
+  priorDelay,
   // Exposed for unit testing (pure helpers, no DB / no globals)
   _internal: { timeToMinutes, classifyOccupancyPct, formatTimeHHMM, SERVICE_GAP_MIN, classifyAccuracyTier },
 };

@@ -174,42 +174,164 @@
   color: #F0547A !important;
 }
 
-/* Bus stop marker */
-.stop-marker {
+/* ─── Bus stop marker (Google-Maps style pin + label) ───────────────────
+   The marker is a flex row: [circular pin] + [label pill]. iconAnchor
+   points at the pin so tooltips/popups align correctly, and the label
+   floats to its right. Labels hide at low zoom via .hide-stop-labels on
+   the map container (toggled by MapController on zoomend). */
+.stop-marker-wrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: auto !important;  /* override Leaflet's fixed iconSize */
+  white-space: nowrap;
+  pointer-events: none;    /* only children take pointer events */
+}
+
+.stop-marker-pin {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
-  background: #ffffff;
+  width: 28px;
+  height: 28px;
+  background: var(--bg-card);
   border: 2px solid var(--accent-blue);
   border-radius: 50%;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.18);
-  transition: all var(--transition-base);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  transition: transform var(--transition-fast),
+              box-shadow var(--transition-fast),
+              background var(--transition-fast);
   cursor: pointer;
+  pointer-events: auto;
 }
 
-.stop-marker svg {
-  width: 16px;
-  height: 16px;
+.stop-marker-pin svg {
+  width: 14px;
+  height: 14px;
   fill: var(--accent-blue);
+  transition: fill var(--transition-fast);
 }
 
-.stop-marker.selected {
+.stop-marker-pin.selected {
   background: var(--accent-blue);
-  border-color: white;
-  box-shadow: 0 0 0 3px var(--accent-blue-glow), 0 4px 12px rgba(0,0,0,0.25);
-  transform: scale(1.3);
+  border-color: #fff;
+  box-shadow: 0 0 0 3px var(--accent-blue-glow), 0 4px 12px rgba(0, 0, 0, 0.3);
+  transform: scale(1.2);
 }
 
-.stop-marker.selected svg {
-  fill: white;
-}
+.stop-marker-pin.selected svg { fill: #fff; }
 
-.stop-marker:hover:not(.selected) {
-  transform: scale(1.15);
+.stop-marker-pin:hover:not(.selected) {
+  transform: scale(1.12);
   border-color: var(--accent-purple);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+}
+
+.stop-marker-label {
+  flex: 0 0 auto;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--text-primary);
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  padding: 3px 7px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+  pointer-events: auto;
+  transition: background var(--transition-fast),
+              color var(--transition-fast),
+              transform var(--transition-fast);
+  /* soft outline so labels stay legible over varied tile colors */
+  text-shadow: 0 0 2px var(--bg-card);
+}
+
+.stop-marker-label:hover {
+  background: var(--bg-card-hover);
+  transform: translateY(-1px);
+}
+
+.stop-marker-label.selected {
+  background: var(--accent-blue);
+  color: #fff;
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 0 2px var(--accent-blue-glow), 0 2px 6px rgba(0, 0, 0, 0.25);
+  text-shadow: none;
+}
+
+/* At low zoom (default <14) hide labels so the map isn't a wall of text.
+   MapController toggles this class on the map container on zoom events. */
+.hide-stop-labels .stop-marker-label:not(.selected) {
+  display: none;
+}
+
+/* ─── Live bus markers ──────────────────────────────────────────────────
+   Positions are updated via Leaflet setLatLng() on a poll tick; the CSS
+   transition on the outer Leaflet marker pane element animates movement
+   smoothly between ticks. Color of the outer ring is tied to delay tier. */
+.live-bus-wrap {
+  width: auto !important;
+  pointer-events: none;
+  /* Leaflet sets transform on this element to position the marker.
+     Transitioning transform gives us the smooth slide between poll ticks. */
+  transition: transform 4000ms linear;
+}
+
+.live-bus {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px 2px 3px;
+  background: var(--bus-color, var(--accent-blue));
+  border: 2px solid #fff;
+  border-radius: var(--radius-full);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  pointer-events: auto;
+  cursor: pointer;
+  transition: box-shadow var(--transition-fast), transform var(--transition-fast);
+}
+
+.live-bus:hover {
+  transform: scale(1.1);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+}
+
+.live-bus__chip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 4px;
+  background: #fff;
+  color: var(--bus-color, var(--accent-blue));
+  border-radius: 50%;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.live-bus__delay {
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  padding-right: 2px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+/* Delay-tier outer glow — judges-friendly at-a-glance signal. */
+.live-bus--ontime   { box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.55), 0 2px 8px rgba(0, 0, 0, 0.35); }
+.live-bus--late     { box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.6),  0 2px 8px rgba(0, 0, 0, 0.35); }
+.live-bus--verylate { box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.65),  0 2px 8px rgba(0, 0, 0, 0.35); }
+
+[data-theme="dark"] .live-bus {
+  border-color: #232836;
 }
 
 /* Map overlay search */
@@ -1022,9 +1144,12 @@
   color: var(--text-muted) !important;
 }
 
-[data-theme="dark"] .stop-marker {
-  background: var(--bg-card);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+[data-theme="dark"] .stop-marker-pin {
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.55);
+}
+
+[data-theme="dark"] .stop-marker-label {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
 }
 
 /* Lift CARTO dark_all tiles so the map reads softer (closer to our slate UI)
@@ -1355,10 +1480,14 @@
 }
 
 /* ─── Responsive ─────────────────────────────────────────────────────── */
+
+/* ── Tablet / small laptop ── */
 @media (max-width: 860px) {
   .app {
     grid-template-columns: 1fr;
-    grid-template-rows: auto 50vh 1fr;
+    /* Map on top (55vh), panel below — the bottom panel scrolls
+       independently, so users can pan the map without losing context. */
+    grid-template-rows: auto 55vh 1fr;
   }
 
   .panel {
@@ -1366,15 +1495,93 @@
     border-top: 1px solid var(--border-subtle);
   }
 
-  .header__subtitle {
-    display: none;
-  }
+  .header__subtitle { display: none; }
+  .weather__extra   { display: none; }
+  .weather__divider { display: none; }
 
-  .weather__extra {
-    display: none;
-  }
+  .panel__header { padding: var(--sp-sm) var(--sp-md); }
+  .panel__body   { padding: var(--sp-sm) var(--sp-md); }
+  .panel__stop-name { font-size: var(--fs-md); }
+}
 
-  .weather__divider {
-    display: none;
+/* ── Phone ── */
+@media (max-width: 640px) {
+  .header {
+    height: 48px;
+    padding: var(--sp-xs) var(--sp-sm);
+    gap: var(--sp-xs);
   }
+  .header__brand { gap: 6px; min-width: 0; }
+  .header__brand > div { min-width: 0; }
+  .header__title {
+    font-size: var(--fs-sm);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .header__logo { width: 28px; height: 28px; }
+  .header__logo img { width: 22px !important; height: 22px !important; }
+  .header__right { gap: var(--sp-xs); flex-shrink: 0; }
+
+  /* LIVE chip → just the pulsing dot, no text (saves ~34px). */
+  .live-indicator { font-size: 0; gap: 0; }
+  .live-indicator .live-dot { margin: 0 2px; }
+
+  /* Weather widget collapses to just the temperature. */
+  .weather { padding: 4px var(--sp-xs); border-radius: var(--radius-full); }
+  .weather__temp { font-size: var(--fs-sm); }
+
+  /* Theme toggle stays visible but slightly smaller. */
+  .theme-toggle { width: 32px; height: 32px; }
+
+  /* Map search overlay: hug the screen edges. */
+  .map-search {
+    top: var(--sp-xs);
+    left: var(--sp-xs);
+    right: var(--sp-xs);
+  }
+  .map-search__input { padding: 10px 0; font-size: var(--fs-sm); }
+
+  /* Panel: tighter cards on small screens. */
+  .app {
+    grid-template-rows: auto 50vh 1fr;
+  }
+  .panel__header { padding: var(--sp-sm); }
+  .panel__body   { padding: var(--sp-sm); }
+  .panel__stop-name { font-size: var(--fs-base); }
+
+  /* Leaflet popups get too wide on phones by default. */
+  .leaflet-popup-content { font-size: var(--fs-xs) !important; margin: 8px 10px !important; }
+
+  /* Live-bus markers: compact a touch so they don't clutter tight maps. */
+  .live-bus { padding: 1px 5px 1px 2px; gap: 2px; }
+  .live-bus__chip { min-width: 16px; height: 16px; font-size: 9px; }
+  .live-bus__delay { font-size: 9px; }
+
+  /* Stop-name labels: hide unless selected; at this size the pin alone
+     is enough, the label pills make the map unreadable. */
+  .stop-marker-label:not(.selected) { display: none; }
+
+  /* Journey/advice/cascade cards: compress horizontal padding. */
+  .advice-card,
+  .journey-card,
+  .cascade-card,
+  .leave-card { padding: var(--sp-sm); }
+
+  /* Leave-by card: let the header wrap so the mode toggle drops below
+     the title when the pills don't fit on one line. */
+  .leave-card__header { flex-wrap: wrap; row-gap: 6px; }
+  .leave-card__walk   { flex-wrap: wrap; row-gap: 6px; }
+  .leave-card__custom-wrap { margin-left: 0; }
+
+  /* Leaflet zoom control: smaller and out of thumb's way. */
+  .leaflet-control-zoom { transform: scale(0.85); transform-origin: bottom right; }
+}
+
+/* ── Very small phones ── */
+@media (max-width: 380px) {
+  .header__subtitle { display: none; }
+  .weather { display: none; }  /* keep the space for LIVE + theme + city */
+  .header { padding: 4px 6px; }
+  .header__right { gap: 4px; }
 }

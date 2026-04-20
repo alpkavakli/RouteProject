@@ -62,6 +62,26 @@
     setupJourneySearch();
     setupLeaveAdvisor();
     setupThemeToggle();
+    setupLiveBuses();
+  }
+
+  /* ─── Live bus polling ──────────────────────────────────────────────
+     Fetches /api/live-buses every N seconds. The map's CSS transition
+     on .live-bus-wrap animates each marker smoothly between ticks, so
+     buses appear to move continuously even though the server pushes
+     discrete snapshots. Slower poll = smoother slide but staler delay. */
+  function setupLiveBuses() {
+    const TICK_MS = 4000;
+    async function tick() {
+      try {
+        const data = await DataService.getLiveBuses();
+        if (data && Array.isArray(data.buses)) {
+          MapController.renderLiveBuses(data.buses);
+        }
+      } catch (_) { /* swallow — next tick retries */ }
+    }
+    tick();
+    setInterval(tick, TICK_MS);
   }
 
   /* ─── Theme Toggle ──────────────────────────────────────────────────
