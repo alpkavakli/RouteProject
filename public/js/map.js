@@ -293,6 +293,9 @@ const MapController = (() => {
     return 'verylate';
   }
 
+  // Inline bus SVG — white fill so it reads against the colored pill.
+  const LIVE_BUS_SVG = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path fill="currentColor" d="M4 16c0 .88.39 1.67 1 2.22V20c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h8v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1.78c.61-.55 1-1.34 1-2.22V6c0-3.5-3.58-4-8-4s-8 .5-8 4v10zm3.5 1c-.83 0-1.5-.67-1.5-1.5S6.67 14 7.5 14s1.5.67 1.5 1.5S8.33 17 7.5 17zm9 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm1.5-6H6V6h12v5z"/></svg>`;
+
   function createBusIcon(bus) {
     const tier = delayTier(bus.delayMin);
     const label = (bus.lineId || '').replace(/^L0*/, '') || bus.lineId || '?';
@@ -303,14 +306,41 @@ const MapController = (() => {
       className: 'live-bus-wrap',
       html: `
         <div class="live-bus live-bus--${tier}" style="--bus-color:${bus.color}">
-          <div class="live-bus__chip">${label}</div>
-          <div class="live-bus__delay">${delayTxt}</div>
+          <span class="live-bus__icon">${LIVE_BUS_SVG}</span>
+          <span class="live-bus__body">
+            <span class="live-bus__line">${label}</span>
+            <span class="live-bus__delay">${delayTxt}</span>
+          </span>
         </div>
       `,
-      iconSize: [44, 28],
-      iconAnchor: [22, 14],
+      iconSize: [58, 28],
+      iconAnchor: [29, 14],
     });
   }
+
+  // Smoothly tween a marker's lat/lng over `duration` ms. Driven by rAF
+  // so Leaflet's own pan transforms still apply instantly — unlike a CSS
+  // transform transition, which catches pan updates and drags markers
+  // back to position on every frame of a pan.
+  function animateMarkerTo(marker, targetLat, targetLng, duration) {
+    if (marker._liveAnim) cancelAnimationFrame(marker._liveAnim);
+    const startLL = marker.getLatLng();
+    const startLat = startLL.lat;
+    const startLng = startLL.lng;
+    const dLat = targetLat - startLat;
+    const dLng = targetLng - startLng;
+    if (Math.abs(dLat) < 1e-8 && Math.abs(dLng) < 1e-8) return;
+    const startTime = performance.now();
+    function step(now) {
+      const t = Math.min(1, (now - startTime) / duration);
+      marker.setLatLng([startLat + dLat * t, startLng + dLng * t]);
+      if (t < 1) marker._liveAnim = requestAnimationFrame(step);
+      else marker._liveAnim = null;
+    }
+    marker._liveAnim = requestAnimationFrame(step);
+  }
+
+  const LIVE_TWEEN_MS = 3800;  // slightly less than poll interval so we stop just before the next update
 
   function renderLiveBuses(buses) {
     if (!map) return;
@@ -320,11 +350,10 @@ const MapController = (() => {
       seen.add(bus.tripKey);
       const existing = liveBusMarkers[bus.tripKey];
       if (existing) {
-        // Smooth slide to new coordinates. The CSS .live-bus-wrap
-        // transition handles the visual interpolation.
-        existing.setLatLng([bus.lat, bus.lng]);
+        // Update the icon (delay/color) immediately, tween position.
         existing.setIcon(createBusIcon(bus));
         existing.busData = bus;
+        animateMarkerTo(existing, bus.lat, bus.lng, LIVE_TWEEN_MS);
       } else {
         const m = L.marker([bus.lat, bus.lng], {
           icon: createBusIcon(bus),
@@ -344,6 +373,9 @@ const MapController = (() => {
     // Remove buses that are no longer active.
     for (const key of Object.keys(liveBusMarkers)) {
       if (!seen.has(key)) {
+        if (liveBusMarkers[key]._liveAnim) {
+          cancelAnimationFrame(liveBusMarkers[key]._liveAnim);
+        }
         map.removeLayer(liveBusMarkers[key]);
         delete liveBusMarkers[key];
       }

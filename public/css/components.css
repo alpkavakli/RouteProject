@@ -276,16 +276,17 @@
 .live-bus-wrap {
   width: auto !important;
   pointer-events: none;
-  /* Leaflet sets transform on this element to position the marker.
-     Transitioning transform gives us the smooth slide between poll ticks. */
-  transition: transform 4000ms linear;
+  /* No CSS transition on transform — position interpolation is handled
+     in JS (map.js animateMarkerTo). A CSS transform transition would
+     fight Leaflet's own pan transforms and cause the marker to visibly
+     lag/snap back whenever the user drags the map. */
 }
 
 .live-bus {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 3px;
-  padding: 2px 6px 2px 3px;
+  gap: 4px;
+  padding: 2px 8px 2px 3px;
   background: var(--bus-color, var(--accent-blue));
   border: 2px solid #fff;
   border-radius: var(--radius-full);
@@ -293,6 +294,9 @@
   pointer-events: auto;
   cursor: pointer;
   transition: box-shadow var(--transition-fast), transform var(--transition-fast);
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum", "cv11";
 }
 
 .live-bus:hover {
@@ -300,29 +304,54 @@
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
 }
 
-.live-bus__chip {
+/* White circular bus-icon badge — immediately readable as "a bus". */
+.live-bus__icon {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-width: 20px;
+  width: 20px;
   height: 20px;
-  padding: 0 4px;
   background: #fff;
   color: var(--bus-color, var(--accent-blue));
   border-radius: 50%;
-  font-size: 10px;
-  font-weight: 800;
+  flex: 0 0 auto;
+}
+
+.live-bus__icon svg {
+  width: 13px;
+  height: 13px;
+  display: block;
+}
+
+/* Line + delay share a two-line stack so the delay reads as a subtitle
+   rather than a free-floating number next to the line code. */
+.live-bus__body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
   line-height: 1;
-  font-variant-numeric: tabular-nums;
+  gap: 1px;
+  padding-right: 1px;
+  min-width: 0;
+}
+
+.live-bus__line {
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  line-height: 1;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
 }
 
 .live-bus__delay {
-  color: #fff;
-  font-size: 10px;
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 8.5px;
   font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  padding-right: 2px;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  letter-spacing: 0.01em;
+  line-height: 1;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.35);
 }
 
 /* Delay-tier outer glow — judges-friendly at-a-glance signal. */
@@ -1554,9 +1583,11 @@
   .leaflet-popup-content { font-size: var(--fs-xs) !important; margin: 8px 10px !important; }
 
   /* Live-bus markers: compact a touch so they don't clutter tight maps. */
-  .live-bus { padding: 1px 5px 1px 2px; gap: 2px; }
-  .live-bus__chip { min-width: 16px; height: 16px; font-size: 9px; }
-  .live-bus__delay { font-size: 9px; }
+  .live-bus { padding: 1px 6px 1px 2px; gap: 3px; }
+  .live-bus__icon { width: 16px; height: 16px; }
+  .live-bus__icon svg { width: 10px; height: 10px; }
+  .live-bus__line { font-size: 10px; }
+  .live-bus__delay { font-size: 7.5px; }
 
   /* Stop-name labels: hide unless selected; at this size the pin alone
      is enough, the label pills make the map unreadable. */
