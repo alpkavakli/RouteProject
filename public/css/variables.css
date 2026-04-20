@@ -100,3 +100,44 @@
   --z-modal: 300;
   --z-tooltip: 400;
 }
+
+/* ─── Dark Theme ───────────────────────────────────────────────────────
+   Mirrors :root tokens with an inverted palette. Accent hues are kept
+   identical so brand identity and status colors stay consistent across
+   themes — only surfaces, text, borders, and shadows flip.
+*/
+[data-theme="dark"] {
+  /* Background & Surface — soft slate, not near-black */
+  --bg-primary: #1e2230;
+  --bg-secondary: #272b3a;
+  --bg-tertiary: #2f3445;
+  --bg-card: #2a2f3e;
+  --bg-card-hover: #343a4d;
+  --bg-overlay: rgba(30, 34, 48, 0.9);
+  --bg-glass: rgba(42, 47, 62, 0.85);
+
+  /* Text */
+  --text-primary: #eef0f5;
+  --text-secondary: #b4bac9;
+  --text-muted: #7a8294;
+
+  /* Borders */
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --border-light: rgba(255, 255, 255, 0.12);
+  --border-accent: rgba(240, 84, 122, 0.45);
+
+  /* Shadows — darker, deeper, with slight accent bleed */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.55);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.7);
+  --shadow-glow-blue: 0 0 20px rgba(240, 84, 122, 0.25);
+  --shadow-glow-purple: 0 0 20px rgba(123, 82, 168, 0.25);
+
+  /* Status backgrounds — slightly bumped so chips stay legible on dark cards */
+  --status-ontime-bg: rgba(52, 211, 153, 0.18);
+  --status-delayed-bg: rgba(248, 113, 113, 0.18);
+  --status-early-bg: rgba(79, 140, 255, 0.18);
+  --crowd-low-bg: rgba(52, 211, 153, 0.18);
+  --crowd-medium-bg: rgba(251, 191, 36, 0.18);
+  --crowd-high-bg: rgba(248, 113, 113, 0.18);
+}

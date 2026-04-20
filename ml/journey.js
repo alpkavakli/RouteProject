@@ -257,7 +257,7 @@ function pathToLegs(steps, stopMap) {
 
 async function planJourney(fromStop, toStop, arrivals, allRoutes, pool, allStops) {
   if (!allStops || allStops.length === 0) {
-    return emptyResult(fromStop, toStop, 'Durak verisi yüklenemedi.');
+    return emptyResult(fromStop, toStop, 'Stop data could not be loaded.');
   }
 
   const { graph, stopMap } = buildTransitGraph(allRoutes, allStops);
@@ -271,12 +271,12 @@ async function planJourney(fromStop, toStop, arrivals, allRoutes, pool, allStops
   }
 
   if (!result) {
-    return emptyResult(fromStop, toStop, 'Bu iki durak arasında güzergah bulunamadı.');
+    return emptyResult(fromStop, toStop, 'No route found between these two stops.');
   }
 
   const legs = pathToLegs(result.steps, stopMap);
   if (legs.length === 0) {
-    return emptyResult(fromStop, toStop, 'Güzergah oluşturulamadı.');
+    return emptyResult(fromStop, toStop, 'Route could not be built.');
   }
 
   // Enrich first bus leg with ML-predicted wait time
@@ -345,23 +345,23 @@ async function planJourney(fromStop, toStop, arrivals, allRoutes, pool, allStops
 
 function buildRecommendation({ totalMin, waitMin, legs, serviceEnded, hasTransfer }) {
   if (serviceEnded) {
-    return { text: 'Şu an sefer yok', icon: '🌙', priority: 'info' };
+    return { text: 'No service right now', icon: '🌙', priority: 'info' };
   }
   if (waitMin <= 2) {
-    return { text: `Koş! ${totalMin} dk'da varırsın`, icon: '🏃', priority: 'urgent' };
+    return { text: `Run! Arrive in ${totalMin} min`, icon: '🏃', priority: 'urgent' };
   }
   const dolmusLeg = legs.find(l => l.type === 'dolmus');
   if (dolmusLeg) {
     const km = (dolmusLeg.distM / 1000).toFixed(1);
-    return { text: `Aktarma noktasına ${km}km dolmuş/taksi`, icon: '🚐', priority: 'suggestion' };
+    return { text: `${km}km minibus/taxi to transfer point`, icon: '🚐', priority: 'suggestion' };
   }
   if (hasTransfer && totalMin <= 40) {
-    return { text: `Aktarmalı ama hızlı — ${totalMin} dk toplam`, icon: '✅', priority: 'ok' };
+    return { text: `With transfer but fast — ${totalMin} min total`, icon: '✅', priority: 'ok' };
   }
   if (!hasTransfer && totalMin <= 20) {
-    return { text: `Kısa yolculuk — ${totalMin} dk toplam`, icon: '✅', priority: 'ok' };
+    return { text: `Short trip — ${totalMin} min total`, icon: '✅', priority: 'ok' };
   }
-  return { text: `${waitMin} dk bekle, toplam ${totalMin} dk`, icon: '🔄', priority: 'ok' };
+  return { text: `${waitMin} min wait, ${totalMin} min total`, icon: '🔄', priority: 'ok' };
 }
 
 function emptyResult(fromStop, toStop, message) {

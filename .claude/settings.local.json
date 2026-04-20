@@ -13,7 +13,9 @@
       "Bash(node:*)",
       "Bash(docker compose up:*)",
       "Bash(docker compose logs:*)",
-      "Bash(ls C:\\\\\\\\Users\\\\\\\\alpka\\\\\\\\RouteProject)"
+      "Bash(ls C:\\\\\\\\Users\\\\\\\\alpka\\\\\\\\RouteProject)",
+      "Bash(npm run *)",
+      "Read(//tmp/**)"
     ]
   }
 }

@@ -18,10 +18,10 @@ services:
   app:
     build: .
     ports:
-      - "3000:3000"
+      - "3050:3050"
     environment:
       - NODE_ENV=production
-      - PORT=3000
+      - PORT=3050
       - DB_HOST=db
       - DB_USER=root
       - DB_PASSWORD=root

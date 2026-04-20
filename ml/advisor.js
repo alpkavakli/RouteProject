@@ -117,6 +117,7 @@ async function generateAdvice(stop, arrivals, crowd, pool, allRoutes) {
       firstBusTimeStr: arrival.firstBusTimeStr || null,
       lastBusTimeStr: arrival.lastBusTimeStr || null,
       minutesToNextBus,
+      futureBusMins: Array.isArray(arrival.realFutureBusMins) ? arrival.realFutureBusMins : null,
       nextBusOccupancyPct: nextBusOccupancyPct ? Math.round(nextBusOccupancyPct) : null,
       recommendation,
       mlPowered: true,
@@ -170,17 +171,17 @@ function analyzeSeatTurnover(routeSeatData, stopSequence) {
   if (avgAlighting > 25) {
     return {
       level: 'high',
-      note: `${Math.round(avgAlighting)} kişi yakında inecek — 3 durağa kadar oturursun`,
+      note: `${Math.round(avgAlighting)} passengers getting off soon — you'll get a seat within 3 stops`,
     };
   } else if (avgAlighting > 15) {
     return {
       level: 'moderate',
-      note: `Koltuklar yakında boşalacak — ~${Math.round(avgAlighting)} kişi inecek`,
+      note: `Seats will free up soon — ~${Math.round(avgAlighting)} alighting`,
     };
   } else if (avgAlighting > 5) {
     return {
       level: 'low',
-      note: `Biraz koltuk değişimi var — ${Math.round(avgAlighting)} kişi inecek`,
+      note: `Some seat turnover — ${Math.round(avgAlighting)} getting off`,
     };
   }
 
@@ -200,10 +201,10 @@ function computeStress({ occupancyPct, delayMin, isRushHour, precipitation, spee
   const clampedScore = Math.max(0, Math.min(100, score));
 
   let label;
-  if (clampedScore < 30) label = 'Rahat';
+  if (clampedScore < 30) label = 'Relaxed';
   else if (clampedScore < 50) label = 'Normal';
-  else if (clampedScore < 70) label = 'Yoğun';
-  else label = 'Stresli';
+  else if (clampedScore < 70) label = 'Busy';
+  else label = 'Stressful';
 
   return { score: clampedScore, label };
 }
@@ -215,8 +216,8 @@ function generateRecommendation({ arrival, occupancyPct, seatsAvailable, isLastB
     return {
       action: 'service-ended',
       text: firstBus
-        ? `Şu an sefer yok — ilk otobüs ${firstBus}`
-        : `Şu an sefer yok — ilk otobüs sabah`,
+        ? `No service right now — first bus at ${firstBus}`
+        : `No service right now — first bus in the morning`,
       icon: '🌙',
       priority: 'info',
     };
@@ -226,7 +227,7 @@ function generateRecommendation({ arrival, occupancyPct, seatsAvailable, isLastB
   if (arrival.predictedMin <= 2) {
     return {
       action: 'run',
-      text: `Koş! Otobüs ${arrival.predictedMin} dk'ya kalkıyor`,
+      text: `Run! Bus leaves in ${arrival.predictedMin} min`,
       icon: '🏃',
       priority: 'urgent',
     };
@@ -238,8 +239,8 @@ function generateRecommendation({ arrival, occupancyPct, seatsAvailable, isLastB
     return {
       action: 'board',
       text: lastBus
-        ? `⚠️ Son sefer (${lastBus}) — bu gece başka otobüs yok`
-        : `⚠️ Son sefer — bu gece başka otobüs yok`,
+        ? `⚠️ Last bus (${lastBus}) — no more service tonight`
+        : `⚠️ Last bus — no more service tonight`,
       icon: '⚠️',
       priority: 'critical',
     };
@@ -251,7 +252,7 @@ function generateRecommendation({ arrival, occupancyPct, seatsAvailable, isLastB
     if (occupancyDiff > 20) {
       return {
         action: 'wait',
-        text: `${minutesToNextBus} dk bekle — sonraki otobüs daha boş (%${Math.round(nextBusOccupancyPct)} dolu)`,
+        text: `Wait ${minutesToNextBus} min — next bus is emptier (${Math.round(nextBusOccupancyPct)}% full)`,
         icon: '⏳',
         priority: 'suggestion',
       };
@@ -262,7 +263,7 @@ function generateRecommendation({ arrival, occupancyPct, seatsAvailable, isLastB
   if (seatsAvailable <= 5 && turnover.level === 'high') {
     return {
       action: 'board',
-      text: turnover.note || 'Koltuklar yakında boşalacak',
+      text: turnover.note || 'Seats will free up soon',
       icon: '🪑',
       priority: 'info',
     };
@@ -272,7 +273,7 @@ function generateRecommendation({ arrival, occupancyPct, seatsAvailable, isLastB
   if (stopSequence > 2 && remainingStops > 12 && occupancyPct > 70) {
     return {
       action: 'alternative',
-      text: `İlk durağa git — boş otobüse bin (2 durak geri)`,
+      text: `Go to the origin stop — board an empty bus (2 stops back)`,
       icon: '🔄',
       priority: 'suggestion',
     };
@@ -282,7 +283,7 @@ function generateRecommendation({ arrival, occupancyPct, seatsAvailable, isLastB
   if (stress.score < 50) {
     return {
       action: 'board',
-      text: `Bin — stres seviyesi düşük`,
+      text: `Board — stress is low`,
       icon: '✅',
       priority: 'ok',
     };
@@ -291,7 +292,7 @@ function generateRecommendation({ arrival, occupancyPct, seatsAvailable, isLastB
   // High stress but no better option
   return {
     action: 'board',
-    text: `Kalabalık ama alternatifsiz — bin`,
+    text: `Crowded but no alternative — board`,
     icon: '😤',
     priority: 'warning',
   };
@@ -318,25 +319,25 @@ function findBestOption(options) {
 }
 
 function generateGlobalAdvice(options, crowd) {
-  if (options.length === 0) return 'Şu an sefer bilgisi yok.';
+  if (options.length === 0) return 'No service info available right now.';
 
   const allServiceEnded = options.every(o => o.serviceEnded);
   if (allServiceEnded) {
     const firstBus = options.map(o => o.firstBusTimeStr).filter(Boolean).sort()[0];
     return firstBus
-      ? `🌙 Şu an sefer yok — ilk otobüs ${firstBus}`
-      : '🌙 Şu an sefer yok — ilk otobüs sabah';
+      ? `🌙 No service — first bus at ${firstBus}`
+      : '🌙 No service — first bus tomorrow morning';
   }
 
   const hasLastBus = options.some(o => o.isLastBus);
-  if (hasLastBus) return '⚠️ Son seferler yaklaşıyor — kaçırmayın!';
+  if (hasLastBus) return '⚠️ Last buses approaching — don\'t miss them!';
 
   const allCrowded = options.every(o => o.stressScore > 60);
-  if (allCrowded) return '😰 Tüm seferler kalabalık — en az stresli olanı seçin.';
+  if (allCrowded) return '😰 All buses are crowded — pick the lowest-stress one.';
 
   const bestOpt = options[findBestOption(options)];
   if (bestOpt && bestOpt.stressScore < 30) {
-    return `✅ İyi koşullar — ${bestOpt.routeId} hattı öneriliyor.`;
+    return `✅ Good conditions — line ${bestOpt.routeId} recommended.`;
   }
 
   return null;

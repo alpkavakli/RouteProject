@@ -14,7 +14,7 @@ const { initDatabase } = require('./db/init');
 const { loadHackathonData, ensureSivasWeatherSeeded } = require('./db/load-csv');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3050;
 
 let pool; // set after DB init
 
@@ -464,6 +464,49 @@ app.get('/api/stops/:id/advice', async (req, res) => {
 
     const advice = await advisor.generateAdvice(stop, arrivals, crowd, pool, routes);
     res.json(advice);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Schedule-a-Ride (arrival-time planner) ─────────────────────────────
+// "Which bus should I target if I need to be at the stop at time T?"
+// Uses ML on top of the scheduled timetable, with historical priors for
+// recentDelay and weather when the target is not today.
+app.get('/api/stops/:id/at', async (req, res) => {
+  try {
+    const stops = await queryStops({ id: req.params.id });
+    if (stops.length === 0) return res.status(404).json({ error: 'Stop not found' });
+    const stop = stops[0];
+
+    const rawTime = req.query.time;
+    const rawWindow = req.query.window;
+
+    const targetDate = rawTime ? new Date(rawTime) : new Date(Date.now() + 15 * 60 * 1000);
+    if (isNaN(targetDate.getTime())) {
+      return res.status(400).json({ error: 'Invalid `time` — expected ISO 8601' });
+    }
+    const windowMin = rawWindow != null ? Number(rawWindow) : 30;
+    if (!Number.isFinite(windowMin) || windowMin <= 0) {
+      return res.status(400).json({ error: 'Invalid `window` — expected positive number of minutes' });
+    }
+
+    await ensureWeatherLoaded(stop.city);
+    const routes = await queryRoutes({ city: stop.city });
+    const options = await predictor.predictAtTime(stop, routes, pool, targetDate, windowMin);
+
+    // The closest predicted-arrival option is the "best match" for the user's
+    // target. -1 when the window had no candidates.
+    const bestMatch = options.length > 0 ? 0 : -1;
+
+    res.json({
+      stopId: stop.id,
+      stopName: stop.name,
+      targetTime: targetDate.toISOString(),
+      window: windowMin,
+      options,
+      bestMatch,
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

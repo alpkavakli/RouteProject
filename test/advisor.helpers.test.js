@@ -29,7 +29,7 @@ const defaultArrival = (over = {}) => ({
 
 const defaultStress = (score = 20) => ({
   score,
-  label: score < 30 ? 'Rahat' : score < 50 ? 'Normal' : score < 70 ? 'Yoğun' : 'Stresli',
+  label: score < 30 ? 'Relaxed' : score < 50 ? 'Normal' : score < 70 ? 'Busy' : 'Stressful',
 });
 
 const defaultRecCtx = (over = {}) => ({
@@ -125,16 +125,16 @@ test('analyzeSeatTurnover: non-null note only for low/moderate/high', () => {
 });
 
 // ─── computeStress (BVA on label edges 30 / 50 / 70) ────────────────────
-test('computeStress: minimal inputs → Rahat (lower equivalence class)', () => {
+test('computeStress: minimal inputs → Relaxed (lower equivalence class)', () => {
   const r = computeStress({
     occupancyPct: 0, delayMin: 0, isRushHour: false,
     precipitation: 0, speedFactor: 1, remainingStops: 0,
   });
   assert.equal(r.score, 0);
-  assert.equal(r.label, 'Rahat');
+  assert.equal(r.label, 'Relaxed');
 });
 
-test('computeStress: max inputs → Stresli + score clamped to 100', () => {
+test('computeStress: max inputs → Stressful + score clamped to 100', () => {
   // speedFactor 0.001 (not 0) — the `|| 1` fallback in the formula
   // treats a literal 0 as "unknown" and contributes nothing. That is
   // intentional: a speedFactor of exactly 0 means "no telemetry yet".
@@ -144,7 +144,7 @@ test('computeStress: max inputs → Stresli + score clamped to 100', () => {
   });
   // 35 + 20 + 15 + 10 + ~10 + 10 = 100
   assert.equal(r.score, 100);
-  assert.equal(r.label, 'Stresli');
+  assert.equal(r.label, 'Stressful');
 });
 
 test('computeStress: speedFactor=0 is treated as unknown via || 1 fallback', () => {
@@ -156,7 +156,7 @@ test('computeStress: speedFactor=0 is treated as unknown via || 1 fallback', () 
   assert.equal(r.score, 90); // missing the 10 points from speedFactor
 });
 
-test('computeStress: BVA on label boundary Rahat→Normal at score 30', () => {
+test('computeStress: BVA on label boundary Relaxed→Normal at score 30', () => {
   // occupancyPct 86 → 86/100*35 = 30.1 → clamped round → 30 → Normal
   const normal = computeStress({
     occupancyPct: 86, delayMin: 0, isRushHour: false,
@@ -164,23 +164,23 @@ test('computeStress: BVA on label boundary Rahat→Normal at score 30', () => {
   });
   assert.equal(normal.label, 'Normal');
 
-  // occupancyPct 82 → 28.7 → round 29 → Rahat
-  const rahat = computeStress({
+  // occupancyPct 82 → 28.7 → round 29 → Relaxed
+  const relaxed = computeStress({
     occupancyPct: 82, delayMin: 0, isRushHour: false,
     precipitation: 0, speedFactor: 1, remainingStops: 0,
   });
-  assert.equal(rahat.label, 'Rahat');
+  assert.equal(relaxed.label, 'Relaxed');
 });
 
-test('computeStress: BVA on label boundary Normal→Yoğun at score 50', () => {
-  // 50 is Yoğun (< 50 → Normal, so 50 falls through)
+test('computeStress: BVA on label boundary Normal→Busy at score 50', () => {
+  // 50 is Busy (< 50 → Normal, so 50 falls through)
   // Build 50: occ 100 → 35, rushHour +15 = 50
-  const yogun = computeStress({
+  const busy = computeStress({
     occupancyPct: 100, delayMin: 0, isRushHour: true,
     precipitation: 0, speedFactor: 1, remainingStops: 0,
   });
-  assert.equal(yogun.score, 50);
-  assert.equal(yogun.label, 'Yoğun');
+  assert.equal(busy.score, 50);
+  assert.equal(busy.label, 'Busy');
 
   // Build 49: occ 97 → 33.95 → round 34, +15 = 49 → Normal
   const normal = computeStress({
@@ -190,14 +190,14 @@ test('computeStress: BVA on label boundary Normal→Yoğun at score 50', () => {
   assert.equal(normal.label, 'Normal');
 });
 
-test('computeStress: BVA on boundary Yoğun→Stresli at score 70', () => {
-  // Build 70: occ 100 (35) + delayMin 20 (20) + rush (15) = 70 → Stresli
-  const stresli = computeStress({
+test('computeStress: BVA on boundary Busy→Stressful at score 70', () => {
+  // Build 70: occ 100 (35) + delayMin 20 (20) + rush (15) = 70 → Stressful
+  const stressful = computeStress({
     occupancyPct: 100, delayMin: 20, isRushHour: true,
     precipitation: 0, speedFactor: 1, remainingStops: 0,
   });
-  assert.equal(stresli.score, 70);
-  assert.equal(stresli.label, 'Stresli');
+  assert.equal(stressful.score, 70);
+  assert.equal(stressful.label, 'Stressful');
 });
 
 test('computeStress: condition coverage on precipitation > 10', () => {
@@ -249,9 +249,9 @@ test('generateRecommendation: serviceEnded fires first regardless of other state
   assert.match(r.text, /05:45/);
 });
 
-test('generateRecommendation: serviceEnded without firstBusTimeStr falls back to "sabah"', () => {
+test('generateRecommendation: serviceEnded without firstBusTimeStr falls back to morning copy', () => {
   const r = generateRecommendation(defaultRecCtx({ serviceEnded: true }));
-  assert.match(r.text, /sabah/);
+  assert.match(r.text, /morning/i);
 });
 
 test('generateRecommendation: run chip at BVA boundary predictedMin=2', () => {
@@ -302,7 +302,7 @@ test('generateRecommendation: wait does NOT fire when occupancy diff ≤ 20 (bra
 test('generateRecommendation: seat-turnover hint when seats ≤ 5 and turnover high', () => {
   const r = generateRecommendation(defaultRecCtx({
     seatsAvailable: 3,
-    turnover: { level: 'high', note: 'Koltuklar 2 durakta boşalacak' },
+    turnover: { level: 'high', note: 'Seats will free up in 2 stops' },
   }));
   assert.equal(r.action, 'board');
   assert.equal(r.icon, '🪑');
@@ -350,7 +350,7 @@ test('findBestOption: picks lowest composite stress+wait+occupancy score', () =>
 
 // ─── generateGlobalAdvice (EP over the banner's 4 outcomes) ─────────────
 test('generateGlobalAdvice: empty options → info text', () => {
-  assert.equal(generateGlobalAdvice([], null), 'Şu an sefer bilgisi yok.');
+  assert.equal(generateGlobalAdvice([], null), 'No service info available right now.');
 });
 
 test('generateGlobalAdvice: all serviceEnded → moon banner with earliest time', () => {
@@ -369,7 +369,7 @@ test('generateGlobalAdvice: any isLastBus → last-bus warning', () => {
     { serviceEnded: false, isLastBus: false, stressScore: 10 },
   ];
   const banner = generateGlobalAdvice(opts, null);
-  assert.match(banner, /Son/);
+  assert.match(banner, /Last bus/i);
 });
 
 test('generateGlobalAdvice: all stressed → stress-wide message', () => {
@@ -378,5 +378,5 @@ test('generateGlobalAdvice: all stressed → stress-wide message', () => {
     { serviceEnded: false, isLastBus: false, stressScore: 80, predictedMin: 6, occupancyPct: 95 },
   ];
   const banner = generateGlobalAdvice(opts, null);
-  assert.match(banner, /kalabalık/i);
+  assert.match(banner, /crowded/i);
 });

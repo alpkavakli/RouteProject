@@ -190,10 +190,10 @@ const UI = (() => {
 
       // Stress color
       const stressColors = {
-        'Rahat': '#22c55e',
+        'Relaxed': '#22c55e',
         'Normal': '#f59e0b',
-        'Yoğun': '#f97316',
-        'Stresli': '#ef4444',
+        'Busy': '#f97316',
+        'Stressful': '#ef4444',
       };
       const stressColor = stressColors[opt.stressLabel] || '#888';
 
@@ -231,18 +231,18 @@ const UI = (() => {
       ` : '';
 
       // Last bus badge
-      const lastBusBadge = opt.isLastBus ? `<span class="last-bus-badge">Son Sefer</span>` : '';
+      const lastBusBadge = opt.isLastBus ? `<span class="last-bus-badge">Last Bus</span>` : '';
 
       // Service-ended badge (night / pre-dawn, no buses until tomorrow)
-      const endedBadge = opt.serviceEnded ? `<span class="service-ended-badge">Sefer Yok</span>` : '';
+      const endedBadge = opt.serviceEnded ? `<span class="service-ended-badge">No Service</span>` : '';
 
-      // Run badge (suppressed when service has ended — "koş" to a bus hours away makes no sense)
-      const runBadge = !opt.serviceEnded && opt.predictedMin <= 2 ? `<span class="run-badge">Koş!</span>` : '';
+      // Run badge (suppressed when service has ended — "run" to a bus hours away makes no sense)
+      const runBadge = !opt.serviceEnded && opt.predictedMin <= 2 ? `<span class="run-badge">Run!</span>` : '';
 
       const arrivalTime = Date.now() + opt.predictedMin * 60 * 1000;
 
       card.innerHTML = `
-        ${isBest ? '<div class="advice-card__best-tag">En İyi Seçenek</div>' : ''}
+        ${isBest ? '<div class="advice-card__best-tag">Best Option</div>' : ''}
         ${endedBadge}
         ${lastBusBadge}
         ${runBadge}
@@ -261,7 +261,7 @@ const UI = (() => {
               </div>
             ` : `
               <div class="advice-card__countdown" id="cd-${idx}" style="color:${opt.routeColor}">
-                ${opt.predictedMin}<span class="advice-card__countdown-unit"> dk</span>
+                ${opt.predictedMin}<span class="advice-card__countdown-unit"> min</span>
               </div>
             `}
           </div>
@@ -269,26 +269,26 @@ const UI = (() => {
 
         <div class="advice-card__metrics">
           <div class="advice-card__metric">
-            <div class="advice-card__metric-label">Yoğunluk</div>
+            <div class="advice-card__metric-label">Crowd</div>
             <span class="advice-card__crowd-badge" style="background:${crowdColor}20;color:${crowdColor};border:1px solid ${crowdColor}40">
               ${opt.crowdLevel}
             </span>
           </div>
           <div class="advice-card__metric">
-            <div class="advice-card__metric-label">Doluluk</div>
+            <div class="advice-card__metric-label">Fill</div>
             <div class="occupancy-bar">
               <div class="occupancy-bar__fill" style="width:${opt.occupancyPct}%;background:${occColor}"></div>
             </div>
             <span class="occupancy-pct">${opt.occupancyPct}%</span>
           </div>
           <div class="advice-card__metric">
-            <div class="advice-card__metric-label">Koltuk</div>
+            <div class="advice-card__metric-label">Seats</div>
             <span style="font-weight:600;color:${opt.seatsAvailable > 10 ? '#22c55e' : opt.seatsAvailable > 0 ? '#f59e0b' : '#ef4444'}">
               ${opt.seatsAvailable}
             </span>
           </div>
           <div class="advice-card__metric">
-            <div class="advice-card__metric-label">Stres</div>
+            <div class="advice-card__metric-label">Stress</div>
             <span class="stress-badge" style="background:${stressColor}20;color:${stressColor};border:1px solid ${stressColor}40">
               ${opt.stressScore} · ${opt.stressLabel}
             </span>
@@ -297,8 +297,8 @@ const UI = (() => {
 
         <div class="advice-card__bottom">
           <span class="advice-card__status ${opt.status}">${statusLabel[opt.status]}</span>
-          <span class="advice-card__scheduled">Planlanan: ${opt.scheduledMin}dk</span>
-          ${opt.minutesToNextBus ? `<span class="advice-card__next">Sonraki: ${opt.minutesToNextBus}dk</span>` : ''}
+          <span class="advice-card__scheduled">Scheduled: ${opt.scheduledMin}m</span>
+          ${opt.minutesToNextBus ? `<span class="advice-card__next">Next: ${opt.minutesToNextBus}m</span>` : ''}
         </div>
 
         ${turnoverHTML}
@@ -325,13 +325,13 @@ const UI = (() => {
         const interval = setInterval(() => {
           const remaining = Math.max(0, Math.round((arrivalTime - Date.now()) / 60000));
           if (remaining <= 0) {
-            cdEl.innerHTML = `<span style="color:var(--accent-green)">Geldi!</span>`;
+            cdEl.innerHTML = `<span style="color:var(--accent-green)">Arriving!</span>`;
             clearInterval(interval);
           } else if (remaining <= 1) {
-            cdEl.innerHTML = `<span style="color:var(--accent-amber)">~1<span class="advice-card__countdown-unit"> dk</span></span>`;
+            cdEl.innerHTML = `<span style="color:var(--accent-amber)">~1<span class="advice-card__countdown-unit"> min</span></span>`;
             cdEl.style.animation = 'countdownPulse 1s ease infinite';
           } else {
-            cdEl.innerHTML = `${remaining}<span class="advice-card__countdown-unit"> dk</span>`;
+            cdEl.innerHTML = `${remaining}<span class="advice-card__countdown-unit"> min</span>`;
           }
         }, 15000);
         countdownIntervals.push(interval);
@@ -463,7 +463,7 @@ const UI = (() => {
         // Still training — keep the loading badge visible and poll again.
         footer.innerHTML = `
           <div class="model-info__badge">ML Engine Training... (Random Forest)</div>
-          <div style="opacity:.7">Modeller hazırlanıyor — birkaç saniye sürebilir.</div>
+          <div style="opacity:.7">Models warming up — a few seconds.</div>
         `;
         return false;
       } catch (e) {
@@ -504,8 +504,8 @@ const UI = (() => {
     const title = document.getElementById('arrivalSectionTitle');
     const badge = document.getElementById('arrivalCount');
     if (mode === 'journey') {
-      if (title) title.textContent = 'Yolculuk Planı';
-      if (badge) badge.textContent = count != null ? `${count} seçenek` : '--';
+      if (title) title.textContent = 'Journey Plan';
+      if (badge) badge.textContent = count != null ? `${count} options` : '--';
     } else {
       if (title) title.textContent = 'Upcoming Arrivals';
       if (badge) badge.textContent = count != null ? `${count} buses` : '--';
@@ -525,17 +525,17 @@ const UI = (() => {
       container.innerHTML = `
         <div class="journey-empty animate-fade-in">
           <div class="journey-empty__icon">🚫</div>
-          <div class="journey-empty__title">${journeyData.message || 'Güzergah bulunamadı'}</div>
+          <div class="journey-empty__title">${journeyData.message || 'No route found'}</div>
           <div class="journey-empty__desc">
-            ${journeyData.from?.name || ''} → ${journeyData.to?.name || ''} arasında
-            uygun güzergah yok.
+            No valid route between
+            ${journeyData.from?.name || ''} → ${journeyData.to?.name || ''}.
           </div>
         </div>
       `;
       return;
     }
 
-    setArrivalSectionMode('journey', journeyData.busStopCount + ' durak');
+    setArrivalSectionMode('journey', journeyData.busStopCount + ' stops');
 
     // ─── Hero Banner ──────────────────────────────────────────
     const banner = document.createElement('div');
@@ -547,8 +547,8 @@ const UI = (() => {
       .join('<span style="color:var(--text-muted);margin:0 2px">→</span>');
 
     const heroTime = journeyData.serviceEnded
-      ? `<span style="color:#8b5cf6">${journeyData.firstBusTimeStr || 'Sefer Yok'}</span>`
-      : `<span style="font-size:1.6rem;font-weight:800;color:var(--accent-blue)">${journeyData.totalMin}<span style="font-size:0.7rem"> dk</span></span>`;
+      ? `<span style="color:#8b5cf6">${journeyData.firstBusTimeStr || 'No Service'}</span>`
+      : `<span style="font-size:1.6rem;font-weight:800;color:var(--accent-blue)">${journeyData.totalMin}<span style="font-size:0.7rem"> min</span></span>`;
 
     banner.innerHTML = `
       <div style="flex:1">
@@ -557,7 +557,7 @@ const UI = (() => {
         </div>
         <div style="margin-top:4px;display:flex;align-items:center;gap:4px">
           ${routeBadges}
-          ${journeyData.hasTransfer ? '<span style="font-size:10px;color:var(--text-muted);margin-left:4px">🔄 Aktarmalı</span>' : ''}
+          ${journeyData.hasTransfer ? '<span style="font-size:10px;color:var(--text-muted);margin-left:4px">🔄 Transfer</span>' : ''}
         </div>
       </div>
       <div style="text-align:right">${heroTime}</div>
@@ -593,7 +593,7 @@ const UI = (() => {
             <span class="journey-card__route-num" style="background:${leg.routeColor};font-size:11px;padding:2px 8px">${leg.routeId}</span>
             <span style="font-size:var(--fs-xs);color:var(--text-secondary)">${leg.routeName}</span>
             <span style="font-size:var(--fs-xs);color:var(--text-muted);margin-left:auto">
-              ${leg.waitMin != null ? leg.waitMin + ' dk bekle + ' : ''}${leg.rideMin} dk
+              ${leg.waitMin != null ? leg.waitMin + ' min wait + ' : ''}${leg.rideMin} min
             </span>
           </div>
         `;
@@ -614,8 +614,8 @@ const UI = (() => {
         // Transfer leg (walk / dolmus)
         const icon = leg.type === 'dolmus' ? '🚐' : '🚶';
         const label = leg.type === 'dolmus'
-          ? `${leg.transferMin} dk dolmuş/taksi (${(leg.distM/1000).toFixed(1)}km)`
-          : `${leg.transferMin} dk yürüyüş (${leg.distM}m)`;
+          ? `${leg.transferMin} min minibus/taxi (${(leg.distM/1000).toFixed(1)}km)`
+          : `${leg.transferMin} min walk (${leg.distM}m)`;
         pathHTML += `
           <div class="journey-path__transfer">
             <div class="journey-path__transfer-icon">${icon}</div>
@@ -633,7 +633,7 @@ const UI = (() => {
     if (journeyData.mlPowered) {
       const mlDiv = document.createElement('div');
       mlDiv.style.cssText = 'text-align:center;margin-top:8px;font-size:10px;color:var(--text-muted)';
-      mlDiv.innerHTML = '<span class="ml-badge">ML</span> Bekleme süresi ML tahminidir';
+      mlDiv.innerHTML = '<span class="ml-badge">ML</span> Wait time is ML-predicted';
       container.appendChild(mlDiv);
     }
   }
@@ -660,26 +660,26 @@ const UI = (() => {
     const bars = cascadeData.stops.map(s => `
       <div class="cascade-bar"
            style="background:${s.color}"
-           title="${s.stopName}: +${s.predictedDelay} dk"></div>
+           title="${s.stopName}: +${s.predictedDelay} min"></div>
     `).join('');
 
     const headline = cascadeData.firstSevereStop
-      ? `<strong>${cascadeData.firstSevereStop.name}</strong>'a kadar +${cascadeData.firstSevereStop.delay} dk`
-      : `Hat sonuna kadar +${end} dk`;
+      ? `+${cascadeData.firstSevereStop.delay} min by <strong>${cascadeData.firstSevereStop.name}</strong>`
+      : `+${end} min by end of line`;
 
     container.style.display = 'block';
     container.innerHTML = `
       <div class="cascade-card animate-fade-in">
         <div class="cascade-card__header">
-          <span class="cascade-card__title">Gecikme Yayılımı · ${cascadeData.routeId}</span>
-          <span class="cascade-card__badge" style="color:${endColor};border-color:${endColor}">+${growth} dk</span>
+          <span class="cascade-card__title">Delay Cascade · ${cascadeData.routeId}</span>
+          <span class="cascade-card__badge" style="color:${endColor};border-color:${endColor}">+${growth} min</span>
         </div>
         <div class="cascade-card__bars">${bars}</div>
         <div class="cascade-card__legend">
-          <span style="color:${startColor}">${start} dk</span>
+          <span style="color:${startColor}">${start} min</span>
           <span class="cascade-card__legend-arrow">→</span>
-          <span style="color:${endColor}">${end} dk</span>
-          <span class="cascade-card__legend-stops">· ${cascadeData.downstreamStopCount} durak</span>
+          <span style="color:${endColor}">${end} min</span>
+          <span class="cascade-card__legend-stops">· ${cascadeData.downstreamStopCount} stops</span>
         </div>
         <div class="cascade-card__hint">${headline}</div>
       </div>
@@ -694,6 +694,256 @@ const UI = (() => {
     }
   }
 
+  // ─── Leave-by Advisor ───────────────────────────────────────────────
+  // Pure presentation: takes the same advice payload the arrivals card
+  // uses, plus the user's walking time, and answers "when should I leave?"
+  // Inspired by Google Maps' transit results — preset pills + custom min,
+  // then 2-4 leave-by options ranked from soonest to last reasonable.
+
+  function _crowdToTag(level) {
+    const seat     = ['empty', 'low', 'light'];
+    const standing = ['moderate', 'medium'];
+    const packed   = ['busy', 'high', 'crowded'];
+    if (seat.includes(level))     return { cls: 'seat',     label: 'Seat available' };
+    if (standing.includes(level)) return { cls: 'standing', label: 'Standing room' };
+    if (packed.includes(level))   return { cls: 'packed',   label: 'Packed' };
+    return { cls: 'standing', label: '—' };
+  }
+
+  function _formatClock(date) {
+    const h = String(date.getHours()).padStart(2, '0');
+    const m = String(date.getMinutes()).padStart(2, '0');
+    return `${h}:${m}`;
+  }
+
+  // Builds leave-by candidates from the advice payload. Each option yields
+  // both the primary bus and (if available) a synthesized "next bus" using
+  // minutesToNextBus, so long walk times still surface reachable buses.
+  // Prefers catchable candidates; falls back to the soonest upcoming ones
+  // with a "missed" flag so the card is never empty.
+  function _pickLeaveOptions(adviceData, walkMin) {
+    if (!adviceData || !adviceData.options) return [];
+    const candidates = [];
+    adviceData.options
+      .filter(opt => !opt.serviceEnded && typeof opt.predictedMin === 'number')
+      .forEach(opt => {
+        // Prefer the full upcoming-buses array from the predictor so we can
+        // surface bus #1 / #2 / #3 for long walk times. Keep bus #1 on the
+        // ML-predicted minute and carry the same delay offset forward to the
+        // later scheduled entries.
+        const future = Array.isArray(opt.futureBusMins) ? opt.futureBusMins : null;
+        if (future && future.length > 0) {
+          const baseSched = future[0];
+          future.forEach((schedMin, i) => {
+            const predMin = i === 0
+              ? opt.predictedMin
+              : opt.predictedMin + (schedMin - baseSched);
+            candidates.push({
+              opt,
+              predictedMin: predMin,
+              leaveInMin: predMin - walkMin,
+              busIndex: i,
+            });
+          });
+          return;
+        }
+
+        // Legacy fallback: primary + synthesized next bus via minutesToNextBus.
+        candidates.push({
+          opt,
+          predictedMin: opt.predictedMin,
+          leaveInMin: opt.predictedMin - walkMin,
+          busIndex: 0,
+        });
+        if (typeof opt.minutesToNextBus === 'number' && opt.minutesToNextBus > 0) {
+          const nextMin = opt.predictedMin + opt.minutesToNextBus;
+          candidates.push({
+            opt,
+            predictedMin: nextMin,
+            leaveInMin: nextMin - walkMin,
+            busIndex: 1,
+          });
+        }
+      });
+
+    const catchable = candidates
+      .filter(c => c.leaveInMin >= -1)
+      .sort((a, b) => a.leaveInMin - b.leaveInMin);
+    if (catchable.length > 0) return catchable.slice(0, 3);
+
+    // Nothing catchable — surface the soonest upcoming buses as "missed"
+    // so the user sees when the next service actually is.
+    return candidates
+      .map(c => ({ ...c, missed: true }))
+      .sort((a, b) => a.predictedMin - b.predictedMin)
+      .slice(0, 3);
+  }
+
+  function renderLeaveAdvisor(adviceData, walkMin) {
+    const container = document.getElementById('leaveAdvisorCard');
+    const slot = document.getElementById('leaveOptions');
+    if (!container || !slot) return;
+
+    // Service ended — show a single explanatory row instead of nothing
+    const serviceEnded = adviceData
+      && adviceData.options
+      && adviceData.options.length > 0
+      && adviceData.options.every(o => o.serviceEnded);
+
+    if (serviceEnded) {
+      const first = adviceData.options[0];
+      container.style.display = 'block';
+      slot.innerHTML = `
+        <div class="leave-option leave-option--ended">
+          <div class="leave-option__time">
+            <span class="leave-option__time-label">First bus</span>
+            <span class="leave-option__time-value">${first.firstBusTimeStr || '--:--'}</span>
+          </div>
+          <div class="leave-option__body">
+            <span class="leave-option__bus">No service tonight</span>
+            <span class="leave-option__tag">Starts tomorrow at ${first.firstBusTimeStr || ''}</span>
+          </div>
+        </div>
+      `;
+      return;
+    }
+
+    const picks = _pickLeaveOptions(adviceData, walkMin);
+    if (picks.length === 0) {
+      container.style.display = 'block';
+      slot.innerHTML = `<div class="leave-empty">No buses coming soon.</div>`;
+      return;
+    }
+
+    container.style.display = 'block';
+
+    const now = Date.now();
+    slot.innerHTML = picks.map(({ opt, predictedMin, leaveInMin, busIndex, missed }) => {
+      const tag = _crowdToTag(opt.crowdLevel || opt.occupancy);
+      const leaveTs = now + leaveInMin * 60 * 1000;
+      const arrivalTs = now + predictedMin * 60 * 1000;
+
+      let timeLabel = 'Leave';
+      let timeValue = _formatClock(new Date(leaveTs));
+      let timeValueCls = '';
+      if (missed) {
+        timeLabel = 'Missed';
+        timeValue = 'Too late';
+        timeValueCls = 'leave-option__time-value--now';
+      } else if (leaveInMin <= 0) {
+        timeLabel = 'Now';
+        timeValue = 'Go!';
+        timeValueCls = 'leave-option__time-value--now';
+      } else if (leaveInMin <= 3) {
+        timeValueCls = 'leave-option__time-value--soon';
+      }
+
+      const routeStyle = opt.routeColor ? `background:${opt.routeColor}` : '';
+      const busLabel = busIndex === 0 ? 'Bus'
+        : busIndex === 1 ? 'Next bus'
+        : `Bus #${busIndex + 1}`;
+      return `
+        <div class="leave-option leave-option--${tag.cls} animate-fade-in">
+          <div class="leave-option__time">
+            <span class="leave-option__time-label">${timeLabel}</span>
+            <span class="leave-option__time-value ${timeValueCls}">${timeValue}</span>
+          </div>
+          <div class="leave-option__body">
+            <span class="leave-option__bus">
+              <span class="leave-option__route" style="${routeStyle}">${opt.routeId}</span>
+              ${busLabel} <span class="leave-option__arrival">${_formatClock(new Date(arrivalTs))}</span>
+              · ${predictedMin} min away
+            </span>
+            <span class="leave-option__tag">${tag.label}</span>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function clearLeaveAdvisor() {
+    const container = document.getElementById('leaveAdvisorCard');
+    if (container) container.style.display = 'none';
+  }
+
+  // ─── Schedule-a-Ride rendering ─────────────────────────────────────
+  function showPlanLoading() {
+    const container = document.getElementById('leaveAdvisorCard');
+    const slot = document.getElementById('leaveOptions');
+    if (!container || !slot) return;
+    container.style.display = 'block';
+    slot.innerHTML = `<div class="leave-empty">Checking the schedule…</div>`;
+  }
+
+  function _tierLabel(tier) {
+    if (tier === 'same-day') return { label: 'ML · today', cls: 'tier-day' };
+    if (tier === 'same-week') return { label: 'ML · this week', cls: 'tier-week' };
+    return { label: 'Schedule-based', cls: 'tier-future' };
+  }
+
+  function _formatClockFromIso(iso) {
+    try { return _formatClock(new Date(iso)); } catch (_) { return '--:--'; }
+  }
+
+  function renderPlanOptions(data, walkOffsetMin) {
+    const container = document.getElementById('leaveAdvisorCard');
+    const slot = document.getElementById('leaveOptions');
+    if (!container || !slot) return;
+    container.style.display = 'block';
+
+    if (!data || !Array.isArray(data.options) || data.options.length === 0) {
+      slot.innerHTML = `<div class="leave-empty">No buses in this window. Try widening it or pick another time.</div>`;
+      return;
+    }
+
+    const picks = data.options.slice(0, 4);
+    const bestIdx = Number.isInteger(data.bestMatch) ? data.bestMatch : 0;
+    const targetMs = new Date(data.targetTime).getTime();
+
+    slot.innerHTML = picks.map((opt, i) => {
+      const tag = _crowdToTag(opt.crowdLevel);
+      const tier = _tierLabel(opt.accuracyTier);
+      const predictedClock = _formatClockFromIso(opt.predictedAt);
+      const diff = Math.round(opt.diffFromTargetMin);
+      const diffTxt = opt.diffSign === 'early'
+        ? `${diff} min early`
+        : opt.diffSign === 'late' ? `${diff} min late` : 'on time';
+
+      // Leave-by chip: predicted arrival minus walk offset.
+      const leaveByMs = new Date(opt.predictedAt).getTime() - (walkOffsetMin || 0) * 60 * 1000;
+      const leaveByClock = _formatClock(new Date(leaveByMs));
+      const leaveInMin = Math.round((leaveByMs - Date.now()) / 60000);
+      const leaveChip = leaveInMin > 0
+        ? `Leave by ${leaveByClock} (${leaveInMin} min)`
+        : `Leave now · ${leaveByClock}`;
+
+      const routeStyle = opt.routeColor ? `background:${opt.routeColor}` : '';
+      const bestCls = i === bestIdx ? ' leave-option--best' : '';
+      return `
+        <div class="leave-option leave-option--${tag.cls}${bestCls} animate-fade-in">
+          <div class="leave-option__time">
+            <span class="leave-option__time-label">Arrive</span>
+            <span class="leave-option__time-value">${predictedClock}</span>
+          </div>
+          <div class="leave-option__body">
+            <span class="leave-option__bus">
+              <span class="leave-option__route" style="${routeStyle}">${opt.routeId}</span>
+              ${diffTxt} · scheduled ${_formatClockFromIso(opt.scheduledAt)}
+            </span>
+            <div class="plan-chips">
+              <span class="plan-chip plan-chip--leave">${leaveChip}</span>
+              <span class="plan-chip plan-chip--${tier.cls}">${tier.label}</span>
+              <span class="leave-option__tag">${tag.label}</span>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    // Silence unused var warning + keep for future target-line overlay
+    void targetMs;
+  }
+
   return {
     renderWeather,
     renderSearchResults,
@@ -705,6 +955,10 @@ const UI = (() => {
     renderJourney,
     renderCascade,
     clearCascade,
+    renderLeaveAdvisor,
+    clearLeaveAdvisor,
+    showPlanLoading,
+    renderPlanOptions,
     renderModelInfo,
     showArrivalsLoading,
     showCrowdLoading,

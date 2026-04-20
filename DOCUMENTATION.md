@@ -568,7 +568,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev          # only production dependencies
 COPY . .
-EXPOSE 3000
+EXPOSE 3050
 ENV NODE_ENV=production
 CMD ["node", "server.js"]
 ```
@@ -582,10 +582,10 @@ services:
   app:
     build: .
     ports:
-      - "3000:3000"
+      - "3050:3050"
     environment:
       - NODE_ENV=production
-      - PORT=3000
+      - PORT=3050
     restart: unless-stopped
 ```
 
@@ -595,7 +595,7 @@ services:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `PORT` | 3000 | Server listen port |
+| `PORT` | 3050 | Server listen port |
 | `NODE_ENV` | — | Set to `production` in Docker |
 
 ### Startup Sequence
@@ -603,6 +603,6 @@ services:
 1. Node process starts
 2. `predictor.init()` trains both models (~60 seconds)
 3. Express starts listening on PORT
-4. App is ready at `http://localhost:3000`
+4. App is ready at `http://localhost:3050`
 
 The server does not accept requests until models are trained. This prevents serving predictions from uninitialized models.

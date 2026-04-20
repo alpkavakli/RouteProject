@@ -1,0 +1,373 @@
+/* ─── Leave-by Advisor ────────────────────────────────────────────── */
+
+.leave-card {
+  margin-top: var(--sp-md);
+  padding: var(--sp-md);
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+}
+
+.leave-card__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-sm);
+  margin-bottom: var(--sp-sm);
+}
+
+.leave-card__title {
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.leave-card__hint {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+/* ─── Walk-time selector ──────────────────────────────────────────── */
+
+.leave-card__walk {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-xs);
+  margin-bottom: var(--sp-md);
+  padding-bottom: var(--sp-sm);
+  border-bottom: 1px dashed var(--border-subtle);
+}
+
+.leave-card__pills {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.leave-pill {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-light);
+  color: var(--text-secondary);
+  padding: 5px 11px;
+  border-radius: var(--radius-full);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: inherit;
+  line-height: 1;
+}
+
+.leave-pill:hover {
+  background: var(--bg-card-hover);
+  color: var(--text-primary);
+  border-color: var(--border-accent);
+}
+
+.leave-pill.active {
+  background: var(--accent-blue);
+  color: #fff;
+  border-color: var(--accent-blue);
+  box-shadow: 0 1px 4px var(--accent-blue-glow);
+}
+
+.leave-card__custom-wrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-full);
+  padding: 2px 10px 2px 4px;
+  transition: border-color 0.15s ease;
+}
+
+.leave-card__custom-wrap:focus-within {
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 0 2px var(--accent-blue-glow);
+}
+
+.leave-card__custom {
+  width: 42px;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-family: inherit;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--text-primary);
+  text-align: center;
+  padding: 5px 4px;
+  -moz-appearance: textfield;
+}
+
+.leave-card__custom::-webkit-outer-spin-button,
+.leave-card__custom::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.leave-card__custom-unit {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+/* ─── Options list ────────────────────────────────────────────────── */
+
+.leave-card__options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.leave-option {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+  padding: var(--sp-sm) var(--sp-md);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  border-left: 3px solid transparent;
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+
+.leave-option:hover {
+  transform: translateX(2px);
+  border-color: var(--border-light);
+}
+
+.leave-option__time {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 64px;
+  padding-right: var(--sp-sm);
+  border-right: 1px solid var(--border-subtle);
+}
+
+.leave-option__time-label {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.leave-option__time-value {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.leave-option__time-value--now {
+  color: var(--accent-red);
+  font-size: 0.85rem;
+}
+
+.leave-option__time-value--soon {
+  color: var(--accent-amber);
+}
+
+.leave-option__body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.leave-option__bus {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.leave-option__route {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.leave-option__arrival {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.leave-option__tag {
+  display: inline-flex;
+  align-items: center;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+}
+
+.leave-option--seat       { border-left-color: #22c55e; }
+.leave-option--seat       .leave-option__tag { color: #22c55e; }
+.leave-option--standing   { border-left-color: #f59e0b; }
+.leave-option--standing   .leave-option__tag { color: #f59e0b; }
+.leave-option--packed     { border-left-color: #ef4444; }
+.leave-option--packed     .leave-option__tag { color: #ef4444; }
+.leave-option--ended      { border-left-color: #8b5cf6; opacity: 0.85; }
+.leave-option--ended      .leave-option__tag { color: #8b5cf6; }
+
+.leave-empty {
+  padding: var(--sp-md);
+  text-align: center;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+}
+
+/* ─── Mode toggle (Leave now / Plan a ride) ───────────────────────── */
+
+.leave-card__mode {
+  display: flex;
+  gap: 4px;
+  background: var(--bg-subtle, #f3f4f6);
+  padding: 3px;
+  border-radius: var(--radius-sm);
+}
+
+.leave-mode {
+  padding: 4px 10px;
+  border: none;
+  background: transparent;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--text-muted);
+  border-radius: calc(var(--radius-sm) - 2px);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.leave-mode:hover {
+  color: var(--text-primary);
+}
+
+.leave-mode.active {
+  background: var(--bg-card);
+  color: var(--text-primary);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+/* ─── Plan a Ride — datetime picker panel ────────────────────────── */
+
+.leave-card__plan {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: var(--sp-md);
+  padding-bottom: var(--sp-sm);
+  border-bottom: 1px dashed var(--border-subtle);
+}
+
+.plan-label {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.plan-input {
+  padding: 6px 10px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+  background: var(--bg-card);
+  font-family: inherit;
+}
+
+.plan-input:focus {
+  outline: none;
+  border-color: var(--accent, #F0547A);
+}
+
+.plan-sub {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.plan-select,
+.plan-walk {
+  padding: 4px 8px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-family: inherit;
+}
+
+.plan-walk {
+  width: 52px;
+}
+
+.plan-select:focus,
+.plan-walk:focus {
+  outline: none;
+  border-color: var(--accent, #F0547A);
+}
+
+/* ─── Plan option chips (under each result) ─────────────────────── */
+
+.plan-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.plan-chip {
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 10px;
+  letter-spacing: 0.02em;
+}
+
+.plan-chip--leave {
+  background: rgba(240, 84, 122, 0.12);
+  color: #F0547A;
+}
+
+.plan-chip--tier-day {
+  background: rgba(34, 197, 94, 0.14);
+  color: #15803d;
+}
+
+.plan-chip--tier-week {
+  background: rgba(245, 158, 11, 0.14);
+  color: #b45309;
+}
+
+.plan-chip--tier-future {
+  background: rgba(107, 114, 128, 0.14);
+  color: #4b5563;
+}
+
+.leave-option--best {
+  box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.35), var(--shadow-sm);
+}

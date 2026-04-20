@@ -1,10 +1,23 @@
 const mysql = require('mysql2/promise');
 
+async function connectWithRetry(config, attempts = 15, delayMs = 2000) {
+  for (let i = 1; i <= attempts; i++) {
+    try {
+      return await mysql.createConnection(config);
+    } catch (err) {
+      const transient = err.code === 'EAI_AGAIN' || err.code === 'ENOTFOUND' || err.code === 'ECONNREFUSED';
+      if (!transient || i === attempts) throw err;
+      console.log(`  ⏳ DB not reachable (${err.code}), retry ${i}/${attempts} in ${delayMs}ms...`);
+      await new Promise(r => setTimeout(r, delayMs));
+    }
+  }
+}
+
 async function initDatabase() {
   const dbName = process.env.DB_NAME || 'predictive_transit';
 
   // Create database if it doesn't exist
-  const conn = await mysql.createConnection({
+  const conn = await connectWithRetry({
     host: process.env.DB_HOST || 'localhost',
     user: process.env.DB_USER || 'root',
     password: process.env.DB_PASSWORD || '',

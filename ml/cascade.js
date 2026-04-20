@@ -70,11 +70,11 @@ async function loadRouteStops() {
 
 // Map a delay value to a severity bucket + color (green→red gradient).
 function severity(delayMin) {
-  if (delayMin < 3)  return { level: 'low',      color: '#22c55e', label: 'Az' };
-  if (delayMin < 7)  return { level: 'moderate', color: '#84cc16', label: 'Hafif' };
-  if (delayMin < 12) return { level: 'high',     color: '#f59e0b', label: 'Orta' };
-  if (delayMin < 20) return { level: 'severe',   color: '#f97316', label: 'Yüksek' };
-  return                     { level: 'critical', color: '#ef4444', label: 'Kritik' };
+  if (delayMin < 3)  return { level: 'low',      color: '#22c55e', label: 'Low' };
+  if (delayMin < 7)  return { level: 'moderate', color: '#84cc16', label: 'Mild' };
+  if (delayMin < 12) return { level: 'high',     color: '#f59e0b', label: 'Moderate' };
+  if (delayMin < 20) return { level: 'severe',   color: '#f97316', label: 'High' };
+  return                     { level: 'critical', color: '#ef4444', label: 'Critical' };
 }
 
 // Predict the delay cascade for a route starting from a given stop.

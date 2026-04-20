@@ -3,6 +3,12 @@
 (async function () {
   'use strict';
 
+  // ── Feature flags ─────────────────────────────────────────────────
+  // Temporary: restrict the app to Sivas only. Other cities in the DB
+  // come with synthetic stops/routes and aren't demo-ready yet.
+  // To re-enable: set ENABLED_CITIES = null (or add names to the list).
+  const ENABLED_CITIES = ['Sivas'];
+
   let currentCity = null;
   let allStops = [];
   let allRoutes = [];
@@ -14,14 +20,21 @@
   let journeyDestId = null;       // destination stop ID (null = arrivals mode)
   let journeyDestDebounce = null;
 
+  // Leave-by Advisor state
+  let leaveWalkMin = 3;            // active walk-time in minutes
+  let lastAdviceData = null;       // cached so pill clicks re-render without re-fetching
+
   // ─── Initialize ─────────────────────────────────────────────────
   async function init() {
     // Start map immediately so Leaflet tiles begin downloading
     // while we wait for /api/cities (saves 200-500ms perceived load)
     MapController.init('map', onStopSelected, { lat: 39.7477, lng: 37.0179, zoom: 13 });
 
-    // Load cities from DB
-    allCities = await DataService.getCities();
+    // Load cities from DB, filtered by the ENABLED_CITIES flag above.
+    const fetched = await DataService.getCities();
+    allCities = ENABLED_CITIES
+      ? fetched.filter(c => ENABLED_CITIES.includes(c.name))
+      : fetched;
     if (allCities.length === 0) return;
 
     currentCity = allCities[0].name;
@@ -29,8 +42,13 @@
     // Feed cities to map
     MapController.setCities(allCities);
 
-    // Build city toggle buttons
-    buildCityToggle(allCities);
+    // Build city toggle buttons — hidden when only one city is enabled.
+    const cityToggleEl = document.getElementById('cityToggle');
+    if (allCities.length > 1) {
+      buildCityToggle(allCities);
+    } else if (cityToggleEl) {
+      cityToggleEl.style.display = 'none';
+    }
 
     // Load data for default city + model info in parallel
     await Promise.all([
@@ -42,6 +60,27 @@
     setupCityToggle();
     setupSearch();
     setupJourneySearch();
+    setupLeaveAdvisor();
+    setupThemeToggle();
+  }
+
+  /* ─── Theme Toggle ──────────────────────────────────────────────────
+     Persists user choice in localStorage; falls back to
+     prefers-color-scheme for first-time visitors. The <html data-theme>
+     attribute is applied inline (before CSS paints) to avoid a flash;
+     see the bootstrap snippet in index.html. */
+  function setupThemeToggle() {
+    const btn = document.getElementById('themeToggle');
+    if (!btn) return;
+    btn.addEventListener('click', () => {
+      const current = document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light';
+      const next = current === 'dark' ? 'light' : 'dark';
+      document.documentElement.dataset.theme = next;
+      try { localStorage.setItem('theme', next); } catch (_) {}
+      if (MapController && typeof MapController.setTheme === 'function') {
+        MapController.setTheme(next);
+      }
+    });
   }
 
   function buildCityToggle(cities) {
@@ -114,6 +153,8 @@
     UI.showCrowdLoading();
     UI.clearCascade();
     MapController.clearCascade();
+    UI.clearLeaveAdvisor();
+    lastAdviceData = null;
 
     // Show journey search for Sivas stops
     const isSivas = currentCity && currentCity.toLowerCase() === 'sivas';
@@ -160,9 +201,16 @@
     if (isSivas) {
       try {
         const advice = await DataService.getAdvice(stopId);
+        if (selectedStopId !== stopId) return;
         UI.renderAdvice(advice);
         if (advice.crowd) {
           UI.renderCrowd(advice.crowd);
+        }
+        lastAdviceData = advice;
+        if (setupLeaveAdvisor.getMode && setupLeaveAdvisor.getMode() === 'plan') {
+          setupLeaveAdvisor.triggerPlanFetch();
+        } else {
+          UI.renderLeaveAdvisor(advice, leaveWalkMin);
         }
       } catch (err) {
         // Fallback to regular endpoints
@@ -170,17 +218,125 @@
           DataService.getArrivals(stopId),
           DataService.getCrowd(stopId),
         ]);
+        if (selectedStopId !== stopId) return;
         UI.renderArrivals(arrivals);
         UI.renderCrowd(crowd);
+        lastAdviceData = { options: arrivals };
+        UI.renderLeaveAdvisor(lastAdviceData, leaveWalkMin);
       }
     } else {
       const [arrivals, crowd] = await Promise.all([
         DataService.getArrivals(stopId),
         DataService.getCrowd(stopId),
       ]);
+      if (selectedStopId !== stopId) return;
       UI.renderArrivals(arrivals);
       UI.renderCrowd(crowd);
+      lastAdviceData = { options: arrivals };
+      UI.renderLeaveAdvisor(lastAdviceData, leaveWalkMin);
     }
+  }
+
+  // ─── Leave-by Advisor wiring ────────────────────────────────────
+  // Two modes: "Leave now" (walk-minutes picker, re-renders from cached
+  // advice) and "Plan a ride" (datetime picker → /api/stops/:id/at).
+  let leaveMode = 'now';             // 'now' | 'plan'
+  let planDebounceTimer = null;
+
+  function setupLeaveAdvisor() {
+    const pills = document.getElementById('leaveWalkPills');
+    const custom = document.getElementById('leaveCustomMin');
+    const tabs = document.getElementById('leaveModeTabs');
+    const walkSec = document.getElementById('leaveWalkSection');
+    const planSec = document.getElementById('leavePlanSection');
+    const title = document.getElementById('leaveCardTitle');
+    const planTime = document.getElementById('leavePlanTime');
+    const planWin = document.getElementById('leavePlanWindow');
+    const planWalk = document.getElementById('leavePlanWalk');
+    if (!pills || !custom || !tabs) return;
+
+    function applyWalkMin(min, source) {
+      const clamped = Math.max(1, Math.min(60, Math.round(min)));
+      leaveWalkMin = clamped;
+      const presets = pills.querySelectorAll('.leave-pill');
+      presets.forEach(p => {
+        p.classList.toggle('active', Number(p.dataset.walk) === clamped);
+      });
+      if (source !== 'custom') custom.value = '';
+      if (lastAdviceData) UI.renderLeaveAdvisor(lastAdviceData, clamped);
+    }
+
+    pills.addEventListener('click', (e) => {
+      const btn = e.target.closest('.leave-pill');
+      if (!btn) return;
+      applyWalkMin(Number(btn.dataset.walk), 'pill');
+    });
+    custom.addEventListener('input', () => {
+      const v = Number(custom.value);
+      if (Number.isFinite(v) && v >= 1) applyWalkMin(v, 'custom');
+    });
+
+    // Default the datetime picker to "now + 15 min" in local time (the input
+    // type is datetime-local so we build a naive local-time string).
+    function defaultPlanTimeStr() {
+      const d = new Date(Date.now() + 15 * 60 * 1000);
+      const pad = n => String(n).padStart(2, '0');
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+    if (planTime && !planTime.value) planTime.value = defaultPlanTimeStr();
+
+    function switchMode(mode) {
+      leaveMode = mode;
+      tabs.querySelectorAll('.leave-mode').forEach(b => {
+        b.classList.toggle('active', b.dataset.mode === mode);
+      });
+      if (mode === 'now') {
+        walkSec.style.display = '';
+        planSec.style.display = 'none';
+        if (title) title.textContent = 'When should I leave?';
+        if (lastAdviceData) UI.renderLeaveAdvisor(lastAdviceData, leaveWalkMin);
+      } else {
+        walkSec.style.display = 'none';
+        planSec.style.display = '';
+        if (title) title.textContent = 'Plan a ride';
+        triggerPlanFetch();
+      }
+    }
+
+    tabs.addEventListener('click', (e) => {
+      const btn = e.target.closest('.leave-mode');
+      if (!btn) return;
+      switchMode(btn.dataset.mode);
+    });
+
+    function triggerPlanFetch() {
+      if (!selectedStopId) return;
+      const isoLocal = planTime.value;
+      if (!isoLocal) return;
+      const targetDate = new Date(isoLocal);
+      if (isNaN(targetDate.getTime())) return;
+      const windowMin = Number(planWin.value) || 30;
+      const walkOffset = Math.max(0, Math.min(60, Number(planWalk.value) || 0));
+      UI.showPlanLoading();
+      DataService.getStopAtTime(selectedStopId, targetDate, windowMin).then(data => {
+        if (leaveMode !== 'plan') return;
+        UI.renderPlanOptions(data, walkOffset);
+      });
+    }
+
+    function debouncedPlanFetch() {
+      clearTimeout(planDebounceTimer);
+      planDebounceTimer = setTimeout(triggerPlanFetch, 250);
+    }
+
+    [planTime, planWin, planWalk].forEach(el => {
+      if (el) el.addEventListener('change', debouncedPlanFetch);
+      if (el) el.addEventListener('input', debouncedPlanFetch);
+    });
+
+    // Expose for re-fetch after stop selection
+    setupLeaveAdvisor.triggerPlanFetch = triggerPlanFetch;
+    setupLeaveAdvisor.getMode = () => leaveMode;
   }
 
   // ─── Journey Mode ──────────────────────────────────────────────
@@ -188,6 +344,7 @@
     UI.showArrivalsLoading();
     UI.clearCascade();
     MapController.clearCascade();
+    UI.clearLeaveAdvisor();
 
     try {
       const journeyData = await DataService.getJourney(fromId, toId);
@@ -200,8 +357,8 @@
         container.innerHTML = `
           <div class="journey-empty animate-fade-in">
             <div class="journey-empty__icon">⚠️</div>
-            <div class="journey-empty__title">Bağlantı hatası</div>
-            <div class="journey-empty__desc">Yolculuk planı yüklenemedi. Tekrar deneyin.</div>
+            <div class="journey-empty__title">Connection error</div>
+            <div class="journey-empty__desc">Could not load journey plan. Please try again.</div>
           </div>
         `;
       }
@@ -228,6 +385,8 @@
             const advice = await DataService.getAdvice(selId);
             UI.renderAdvice(advice);
             if (advice.crowd) UI.renderCrowd(advice.crowd);
+            lastAdviceData = advice;
+            UI.renderLeaveAdvisor(advice, leaveWalkMin);
           } catch (e) {}
         } else {
           const [arr, crd] = await Promise.all([
@@ -236,6 +395,8 @@
           ]);
           UI.renderArrivals(arr);
           UI.renderCrowd(crd);
+          lastAdviceData = { options: arr };
+          UI.renderLeaveAdvisor(lastAdviceData, leaveWalkMin);
         }
       }
     }, 30000);
@@ -304,7 +465,7 @@
     if (stops.length === 0) {
       container.innerHTML = `
         <div style="padding:12px;text-align:center;color:var(--text-muted);font-size:var(--fs-xs);">
-          Durak bulunamadı
+          No stops found
         </div>`;
       return;
     }

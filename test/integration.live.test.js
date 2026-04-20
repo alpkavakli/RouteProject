@@ -1,4 +1,4 @@
-// Integration smoke tests — hit a running server at http://localhost:3000.
+// Integration smoke tests — hit a running server at http://localhost:3050.
 //
 // These are black-box tests: no mocks, no supertest, no pool injection.
 // The server must already be running (docker compose up or `npm start`).
@@ -13,7 +13,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const BASE = process.env.TEST_BASE_URL || 'http://localhost:3000';
+const BASE = process.env.TEST_BASE_URL || 'http://localhost:3050';
 const PROBE_STOP = process.env.TEST_STOP_ID || 'STP-L01-04';
 
 let serverReachable = null;

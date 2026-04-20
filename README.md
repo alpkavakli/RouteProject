@@ -17,7 +17,7 @@ docker compose up -d --build
 docker compose logs -f app # to see logs
 
 docker compose down # if you want to stop
-# Open http://localhost:3000 → select Sivas → click any bus stop
+# Open http://localhost:3050 → select Sivas → click any bus stop
 ```
 
 First startup loads 62 Sivas stops, 13k trips, 4.4k arrival observations, and 3.5k passenger-flow records into MySQL, then trains both ML models on the real data (~2 minutes total).

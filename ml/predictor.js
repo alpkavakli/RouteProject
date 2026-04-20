@@ -9,6 +9,77 @@ let currentWeather = { temperature: 20, precipitation: 0, windSpeed: 10 };
 let isInitialized = false;
 let dataSource = 'synthetic';
 
+// Historical averages used when predicting for future times (same-week or
+// later). Live `recentDelay` and live weather don't generalize, so we fall
+// back to these route-conditioned priors keyed by (lineId, hour, dayOfWeek).
+// Populated once in init() from hackathon_arrivals + hackathon_trips.
+const historicalPriors = {
+  delayByLineHourDow: new Map(),   // key = `${lineId}|${hour}|${dow}` → avg delay
+  weatherByHourDow: new Map(),     // key = `${hour}|${dow}` → {temp, precip, wind}
+  loaded: false,
+};
+
+function priorKey(lineId, hour, dow) { return `${lineId}|${hour}|${dow}`; }
+function weatherKey(hour, dow) { return `${hour}|${dow}`; }
+
+async function loadHistoricalPriors(pool) {
+  try {
+    // Join arrivals→trips so we get day_of_week (only on trips) and can
+    // bucket per-stop observed delay by the hour the bus actually reached
+    // the stop. This captures rush-hour delay signal better than departure
+    // delay alone.
+    const [delayRows] = await pool.query(`
+      SELECT a.line_id,
+             HOUR(a.scheduled_arrival) AS hour_of_day,
+             t.day_of_week,
+             AVG(a.delay_min) AS avg_delay
+      FROM hackathon_arrivals a
+      JOIN hackathon_trips t ON a.trip_id = t.trip_id
+      WHERE a.delay_min IS NOT NULL
+      GROUP BY a.line_id, hour_of_day, t.day_of_week
+    `);
+    historicalPriors.delayByLineHourDow.clear();
+    for (const r of delayRows) {
+      historicalPriors.delayByLineHourDow.set(
+        priorKey(r.line_id, Number(r.hour_of_day), Number(r.day_of_week)),
+        Number(r.avg_delay) || 0
+      );
+    }
+
+    const [wxRows] = await pool.query(`
+      SELECT HOUR(planned_departure) AS hour_of_day, day_of_week,
+             AVG(temperature_c) AS avg_temp,
+             AVG(precipitation_mm) AS avg_precip,
+             AVG(wind_speed_kmh) AS avg_wind
+      FROM hackathon_trips
+      GROUP BY hour_of_day, day_of_week
+    `);
+    historicalPriors.weatherByHourDow.clear();
+    for (const r of wxRows) {
+      historicalPriors.weatherByHourDow.set(
+        weatherKey(Number(r.hour_of_day), Number(r.day_of_week)),
+        {
+          temperature: Number(r.avg_temp) || 20,
+          precipitation: Number(r.avg_precip) || 0,
+          windSpeed: Number(r.avg_wind) || 10,
+        }
+      );
+    }
+
+    historicalPriors.loaded = true;
+    console.log(`   📊 Priors loaded: ${historicalPriors.delayByLineHourDow.size} delay cells, ${historicalPriors.weatherByHourDow.size} weather cells`);
+  } catch (err) {
+    console.log(`   ⚠️ Prior computation failed: ${err.message}`);
+  }
+}
+
+function priorDelay(lineId, hour, dow, fallback = 0) {
+  return historicalPriors.delayByLineHourDow.get(priorKey(lineId, hour, dow)) ?? fallback;
+}
+function priorWeather(hour, dow) {
+  return historicalPriors.weatherByHourDow.get(weatherKey(hour, dow)) || currentWeather;
+}
+
 // ─── Real Schedule Lookup ────────────────────────────────────────────────
 // Converts MySQL TIME ("HH:MM:SS" or Date) to minutes-since-midnight
 function timeToMinutes(t) {
@@ -166,6 +237,16 @@ async function loadAllSchedules(pool, stopId, lineIds, dayOfWeek, nowMinutes) {
       ? Math.max(1, Math.round(nextBusMin - primary.arrivalMin))
       : null;
 
+    // Minutes-from-now for each candidate (bus #1, #2, #3), with midnight
+    // wrap handled the same way as the primary. Consumers that want to show
+    // "later buses today" iterate this array instead of synthesizing from
+    // minutesToNextBus (which only exposes bus #2).
+    const futureBusMins = candidates.map(c => {
+      let m = c.arrivalMin - nowMinutes;
+      if (m <= 0) m += 24 * 60;
+      return Math.max(1, Math.round(m));
+    });
+
     // Last trip: are there later trips today for this line?
     const laterCount = lineTrips.filter(
       r => Number(r.day_of_week) === dayOfWeek && r.arrivalMin > primary.arrivalMin
@@ -192,6 +273,7 @@ async function loadAllSchedules(pool, stopId, lineIds, dayOfWeek, nowMinutes) {
       tripPrecipitationMm: Number(primary.precipitation_mm),
       trafficLevel: primary.traffic_level || null,
       minutesToNextBus,
+      futureBusMins,
       serviceEnded,
       isLastTripToday,
       firstBusTimeStr: serviceEnded ? arrTimeStr : null,
@@ -242,6 +324,10 @@ async function init(pool) {
   } else {
     dataSource = 'hackathon_real';
   }
+
+  // Historical priors — used by predictAtTime() for future-target predictions
+  // where live recentDelay/weather signals don't apply.
+  if (pool) await loadHistoricalPriors(pool);
 
   isInitialized = true;
   const elapsed = ((Date.now() - start) / 1000).toFixed(1);
@@ -304,6 +390,7 @@ async function predictArrivals(stop, routes, pool) {
     let realOccupancyPct = null;
     let realSpeedFactor = 1;
     let realNextBusMin = null;
+    let realFutureBusMins = null;
     let busCapacity = 60;
     let serviceEnded = false;
     let isLastTripToday = false;
@@ -318,6 +405,7 @@ async function predictArrivals(stop, routes, pool) {
       realOccupancyPct = real.avgOccupancyPct;
       realSpeedFactor = real.speedFactor;
       realNextBusMin = real.minutesToNextBus;
+      realFutureBusMins = real.futureBusMins || null;
       busCapacity = real.busCapacity;
       serviceEnded = !!real.serviceEnded;
       isLastTripToday = !!real.isLastTripToday;
@@ -394,6 +482,7 @@ async function predictArrivals(stop, routes, pool) {
       realOccupancyPct,
       realSpeedFactor,
       realNextBusMin,
+      realFutureBusMins,
       busCapacity,
       serviceEnded,
       isLastTripToday,
@@ -404,6 +493,226 @@ async function predictArrivals(stop, routes, pool) {
   }));
 
   return results.filter(Boolean).sort((a, b) => a.predictedMin - b.predictedMin);
+}
+
+/**
+ * Classify how far into the future the target is. Governs which features are
+ * "live" vs substituted with historical priors.
+ */
+function classifyAccuracyTier(targetDate, now) {
+  const sameDay = targetDate.toDateString() === now.toDateString();
+  if (sameDay) return 'same-day';
+  const daysAhead = (targetDate - now) / (1000 * 60 * 60 * 24);
+  if (daysAhead <= 7) return 'same-week';
+  return 'far-future';
+}
+
+/**
+ * Predict which buses will be at this stop around a target time.
+ *
+ * Differs from predictArrivals() in that the target is not "now":
+ *  - Scheduled arrivals at the stop are filtered to [target - win, target + win]
+ *  - Features that don't generalize (recentDelay, live weather) are replaced
+ *    with historical priors keyed by (lineId, hour, dayOfWeek).
+ *  - Each option carries an `accuracyTier` so the UI can dim confidence when
+ *    the target is days away.
+ *
+ * @param {Object} stop        - { id, routes, popularity, avg_delay, ... }
+ * @param {Array}  routes      - all route objects for the stop's city
+ * @param {Object} pool        - MySQL pool (required)
+ * @param {Date}   targetDate  - desired arrival moment
+ * @param {number} windowMin   - ± search window (minutes), clamped to [5, 90]
+ */
+async function predictAtTime(stop, routes, pool, targetDate, windowMin = 30) {
+  if (!pool) return [];
+  const win = Math.max(5, Math.min(90, Number(windowMin) || 30));
+
+  const now = new Date();
+  const targetHour = targetDate.getHours();
+  const targetMinOfDay = targetHour * 60 + targetDate.getMinutes();
+  const jsDay = targetDate.getDay();
+  const isWeekday = jsDay >= 1 && jsDay <= 5;
+  const isRushHour = isWeekday && ((targetHour >= 7 && targetHour <= 9) || (targetHour >= 17 && targetHour <= 19));
+  const dayOfWeek = (jsDay + 6) % 7;
+  const accuracyTier = classifyAccuracyTier(targetDate, now);
+
+  const profile = { popularity: stop.popularity || 0.5, avgDelay: stop.avg_delay || 2 };
+  const lineIds = stop.routes || [];
+  if (lineIds.length === 0) return [];
+  const placeholders = lineIds.map(() => '?').join(',');
+
+  // Pull all trips on the target DOW and interpolate each one's arrival at
+  // this stop (same technique as loadAllSchedules). Then filter to the window.
+  const [tripRows] = await pool.execute(
+    `SELECT trip_id, line_id, day_of_week, planned_departure,
+            planned_duration_min, num_stops,
+            avg_occupancy_pct, bus_capacity,
+            temperature_c, precipitation_mm, traffic_level
+     FROM hackathon_trips
+     WHERE line_id IN (${placeholders}) AND day_of_week = ?
+     ORDER BY line_id, planned_departure`,
+    [...lineIds, dayOfWeek]
+  );
+
+  const [posRows] = await pool.execute(
+    `SELECT rs.route_id AS line_id, rs.stop_order
+     FROM route_stops rs
+     WHERE rs.stop_id = ? AND rs.route_id IN (${placeholders})`,
+    [stop.id, ...lineIds]
+  );
+  const posByLine = {};
+  for (const r of posRows) posByLine[r.line_id] = Number(r.stop_order);
+
+  const [arrivalDetail] = await pool.execute(
+    `SELECT a.trip_id, a.scheduled_arrival, a.stop_sequence
+     FROM hackathon_arrivals a
+     WHERE a.stop_id = ? AND a.line_id IN (${placeholders})`,
+    [stop.id, ...lineIds]
+  );
+  const detailByTrip = {};
+  for (const r of arrivalDetail) detailByTrip[r.trip_id] = r;
+
+  const matches = [];
+  for (const trip of tripRows) {
+    const stopOrder = posByLine[trip.line_id];
+    if (stopOrder == null) continue;
+
+    const numStops = Number(trip.num_stops) || 14;
+    const segments = Math.max(1, numStops - 1);
+    const durationMin = Number(trip.planned_duration_min) || 30;
+    const depMin = timeToMinutes(trip.planned_departure);
+    const estArrMin = depMin + (stopOrder / segments) * durationMin;
+
+    const detail = detailByTrip[trip.trip_id];
+    const scheduledMinOfDay = detail ? timeToMinutes(detail.scheduled_arrival) : estArrMin;
+
+    // Circular distance handles target near midnight (e.g. target 00:15,
+    // trip 23:50) — wrap is the minimum of forward / reverse gap.
+    let diff = scheduledMinOfDay - targetMinOfDay;
+    if (diff > 720) diff -= 1440;
+    if (diff < -720) diff += 1440;
+    if (Math.abs(diff) > win) continue;
+
+    matches.push({
+      trip,
+      scheduledMinOfDay,
+      diffFromTargetMin: diff,
+      stopSequence: detail ? (detail.stop_sequence || stopOrder + 1) : stopOrder + 1,
+    });
+  }
+
+  // Dedupe: the CSV covers multiple weeks, so each (line, scheduled-slot)
+  // combo appears several times. Keep one synthetic entry per slot, averaging
+  // the occupancy across weeks.
+  const slotMap = new Map();
+  for (const m of matches) {
+    const key = `${m.trip.line_id}|${Math.round(m.scheduledMinOfDay)}`;
+    const existing = slotMap.get(key);
+    if (!existing) {
+      slotMap.set(key, {
+        ...m,
+        occSum: Number(m.trip.avg_occupancy_pct) || 0,
+        occCount: m.trip.avg_occupancy_pct != null ? 1 : 0,
+      });
+    } else {
+      if (m.trip.avg_occupancy_pct != null) {
+        existing.occSum += Number(m.trip.avg_occupancy_pct);
+        existing.occCount += 1;
+      }
+    }
+  }
+  const deduped = [...slotMap.values()].map(m => ({
+    ...m,
+    trip: {
+      ...m.trip,
+      avg_occupancy_pct: m.occCount > 0 ? m.occSum / m.occCount : m.trip.avg_occupancy_pct,
+    },
+  }));
+
+  if (deduped.length === 0) return [];
+
+  // Build per-trip predictions. Live features are used only for same-day
+  // within a ~2h future window; otherwise we fall back to priors.
+  const sameDay = accuracyTier === 'same-day';
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  const minutesToTarget = targetMinOfDay - nowMinutes;
+  const useLiveWindow = sameDay && minutesToTarget > 0 && minutesToTarget <= 120;
+
+  const results = deduped.map(({ trip, scheduledMinOfDay, diffFromTargetMin, stopSequence }) => {
+    const route = routes.find(r => r.id === trip.line_id);
+    if (!route) return null;
+
+    const weather = useLiveWindow ? currentWeather : priorWeather(targetHour, dayOfWeek);
+    const recentDelay = useLiveWindow
+      ? priorDelay(trip.line_id, targetHour, dayOfWeek, profile.avgDelay)
+      : priorDelay(trip.line_id, targetHour, dayOfWeek, profile.avgDelay);
+
+    const scheduledMinutes = Math.max(
+      1,
+      Math.round(scheduledMinOfDay - timeToMinutes(trip.planned_departure))
+    );
+
+    const prediction = arrivalModel.predict({
+      hour: targetHour,
+      dayOfWeek,
+      isRushHour,
+      temperature: weather.temperature,
+      precipitation: weather.precipitation,
+      windSpeed: weather.windSpeed,
+      scheduledMinutes,
+      stopPopularity: profile.popularity,
+      routeAvgDelay: profile.avgDelay,
+      recentDelay,
+      segmentIndex: stopSequence,
+    });
+
+    const predictedDelay = prediction.predictedDelay;
+    const predictedMinOfDay = scheduledMinOfDay + predictedDelay;
+    const diffFromTargetPredicted = predictedMinOfDay - targetMinOfDay;
+
+    // Build absolute Date objects on the target date (not today) so the UI
+    // can show real clock times even when scheduling far in advance.
+    const scheduledAt = new Date(targetDate);
+    scheduledAt.setHours(0, 0, 0, 0);
+    scheduledAt.setMinutes(scheduledMinOfDay);
+    const predictedAt = new Date(targetDate);
+    predictedAt.setHours(0, 0, 0, 0);
+    predictedAt.setMinutes(Math.round(predictedMinOfDay));
+
+    // Occupancy: prefer trip's historical avg as the crowd signal — ML crowd
+    // classifier isn't meaningful without live conditions.
+    const occupancyPct = Number(trip.avg_occupancy_pct) || 50;
+    const crowdLevel = classifyOccupancyPct(occupancyPct);
+
+    return {
+      routeId: route.id,
+      routeName: route.name,
+      routeColor: route.color,
+      destination: route.name.split('–').pop() || route.name.split('-').pop() || route.name,
+      tripId: trip.trip_id,
+      scheduledAt: scheduledAt.toISOString(),
+      predictedAt: predictedAt.toISOString(),
+      predictedDelayMin: Number(predictedDelay.toFixed(1)),
+      diffFromTargetMin: Number(Math.abs(diffFromTargetPredicted).toFixed(1)),
+      diffSign: diffFromTargetPredicted < 0 ? 'early' : (diffFromTargetPredicted > 0 ? 'late' : 'on-time'),
+      scheduledDiffMin: Number(diffFromTargetMin.toFixed(1)),
+      crowdLevel,
+      occupancyPct: Math.round(occupancyPct),
+      confidence: prediction.confidence,
+      accuracyTier,
+      trafficLevel: trip.traffic_level || null,
+    };
+  }).filter(Boolean);
+
+  // Sort by closeness to target (absolute predicted diff), tie-break on
+  // scheduled time so earlier buses win when two options match equally.
+  results.sort((a, b) => {
+    const d = a.diffFromTargetMin - b.diffFromTargetMin;
+    if (d !== 0) return d;
+    return new Date(a.scheduledAt) - new Date(b.scheduledAt);
+  });
+
+  return results;
 }
 
 /**
@@ -482,7 +791,7 @@ function getModelInfo() {
 }
 
 module.exports = {
-  init, setWeather, predictArrivals, predictCrowd, getModelInfo,
+  init, setWeather, predictArrivals, predictAtTime, predictCrowd, getModelInfo,
   // Exposed for unit testing (pure helpers, no DB / no globals)
-  _internal: { timeToMinutes, classifyOccupancyPct, formatTimeHHMM, SERVICE_GAP_MIN },
+  _internal: { timeToMinutes, classifyOccupancyPct, formatTimeHHMM, SERVICE_GAP_MIN, classifyAccuracyTier },
 };

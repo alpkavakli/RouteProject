@@ -40,6 +40,12 @@ const DataService = {
     return await safeFetch(`${API_BASE}/api/stops/${stopId}/advice`);
   },
 
+  async getStopAtTime(stopId, targetDate, windowMin = 30) {
+    const iso = targetDate instanceof Date ? targetDate.toISOString() : new Date(targetDate).toISOString();
+    const url = `${API_BASE}/api/stops/${stopId}/at?time=${encodeURIComponent(iso)}&window=${windowMin}`;
+    return await safeFetch(url);
+  },
+
   async getHackathonStats() {
     return await safeFetch(`${API_BASE}/api/hackathon/stats`);
   },

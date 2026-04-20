@@ -9,6 +9,19 @@ const MapController = (() => {
   let selectedStopId = null;
   let onStopSelect = null;
   let citiesMap = {};
+  let tileLayer = null;
+
+  const TILE_URLS = {
+    light: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+    // CARTO's dark_all is near-black; the .dark-tiles CSS class lifts it
+    // to match our softer slate UI surfaces.
+    dark:  'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+  };
+  const TILE_OPTS = {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>',
+    subdomains: 'abcd',
+    maxZoom: 19,
+  };
 
   const BUS_ICON_SVG = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M4 16c0 .88.39 1.67 1 2.22V20c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h8v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1.78c.61-.55 1-1.34 1-2.22V6c0-3.5-3.58-4-8-4s-8 .5-8 4v10zm3.5 1c-.83 0-1.5-.67-1.5-1.5S6.67 14 7.5 14s1.5.67 1.5 1.5S8.33 17 7.5 17zm9 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm1.5-6H6V6h12v5z"/></svg>`;
 
@@ -40,15 +53,19 @@ const MapController = (() => {
       attributionControl: true,
     });
 
-    // Light tile layer
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>',
-      subdomains: 'abcd',
-      maxZoom: 19,
-    }).addTo(map);
+    // Tile layer — respects current theme, can be swapped live via setTheme()
+    const theme = document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light';
+    tileLayer = L.tileLayer(TILE_URLS[theme], TILE_OPTS).addTo(map);
 
     // Position zoom controls
     map.zoomControl.setPosition('bottomright');
+  }
+
+  function setTheme(theme) {
+    if (!map || !tileLayer) return;
+    const key = theme === 'dark' ? 'dark' : 'light';
+    map.removeLayer(tileLayer);
+    tileLayer = L.tileLayer(TILE_URLS[key], TILE_OPTS).addTo(map);
   }
 
   function renderStops(stops) {
@@ -215,7 +232,7 @@ const MapController = (() => {
         }
       ).addTo(map);
       seg.bindTooltip(
-        `<strong>${to.stopName}</strong><br>Beklenen gecikme: <b style="color:${to.color}">+${to.predictedDelay} dk</b>`,
+        `<strong>${to.stopName}</strong><br>Expected delay: <b style="color:${to.color}">+${to.predictedDelay} min</b>`,
         { sticky: true, className: 'cascade-tooltip' }
       );
       cascadeLayers.push(seg);
@@ -241,5 +258,5 @@ const MapController = (() => {
     cascadeLayers = [];
   }
 
-  return { init, setCities, renderStops, selectStop, flyToCity, drawRoutes, getSelectedStopId, highlightJourney, clearJourneyHighlight, showCascade, clearCascade };
+  return { init, setCities, renderStops, selectStop, flyToCity, drawRoutes, getSelectedStopId, highlightJourney, clearJourneyHighlight, showCascade, clearCascade, setTheme };
 })();

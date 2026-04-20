@@ -28,8 +28,21 @@
   <link rel="stylesheet" href="/css/advice.css">
   <link rel="stylesheet" href="/css/journey.css">
   <link rel="stylesheet" href="/css/cascade.css">
+  <link rel="stylesheet" href="/css/leave.css">
 
   <link rel="icon" href="/assets/logo.png">
+
+  <!-- Theme bootstrap — runs before paint to avoid a light-to-dark flash. -->
+  <script>
+    (function () {
+      try {
+        var saved = localStorage.getItem('theme');
+        var prefers = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        var theme = saved || (prefers ? 'dark' : 'light');
+        document.documentElement.dataset.theme = theme;
+      } catch (_) {}
+    })();
+  </script>
 </head>
 
 <body>
@@ -50,6 +63,13 @@
           <span class="live-dot"></span>
           LIVE
         </div>
+
+        <button class="theme-toggle" id="themeToggle" type="button" aria-label="Toggle theme" title="Toggle theme">
+          <span class="theme-toggle__orb"></span>
+          <span class="theme-toggle__stars" aria-hidden="true">
+            <i></i><i></i><i></i>
+          </span>
+        </button>
 
         <div class="city-toggle" id="cityToggle">
           <!-- City buttons loaded dynamically from database -->
@@ -119,18 +139,71 @@
           <!-- Delay Cascade Card (filled when route data is available) -->
           <div id="cascadeCard" style="display:none;"></div>
 
+          <!-- Leave-by Advisor — two modes: Leave now (walk-time) / Plan a ride (datetime) -->
+          <div id="leaveAdvisorCard" class="leave-card" style="display:none;">
+            <div class="leave-card__header">
+              <span class="leave-card__title" id="leaveCardTitle">When should I leave?</span>
+              <div class="leave-card__mode" id="leaveModeTabs">
+                <button class="leave-mode active" data-mode="now">Leave now</button>
+                <button class="leave-mode" data-mode="plan">Plan a ride</button>
+              </div>
+            </div>
+
+            <!-- Mode A: Leave now (existing walk-minutes picker) -->
+            <div class="leave-card__walk" id="leaveWalkSection">
+              <div class="leave-card__pills" id="leaveWalkPills">
+                <button class="leave-pill" data-walk="1">1 min</button>
+                <button class="leave-pill active" data-walk="3">3 min</button>
+                <button class="leave-pill" data-walk="5">5 min</button>
+                <button class="leave-pill" data-walk="10">10 min</button>
+              </div>
+              <div class="leave-card__custom-wrap">
+                <input
+                  type="number"
+                  class="leave-card__custom"
+                  id="leaveCustomMin"
+                  placeholder="custom"
+                  min="1"
+                  max="60"
+                  inputmode="numeric"
+                >
+                <span class="leave-card__custom-unit">min</span>
+              </div>
+            </div>
+
+            <!-- Mode B: Plan a ride (datetime picker) -->
+            <div class="leave-card__plan" id="leavePlanSection" style="display:none;">
+              <label class="plan-label">Target arrival</label>
+              <input type="datetime-local" id="leavePlanTime" class="plan-input">
+              <div class="plan-sub">
+                <label>± window</label>
+                <select id="leavePlanWindow" class="plan-select">
+                  <option value="15">15 min</option>
+                  <option value="30" selected>30 min</option>
+                  <option value="60">60 min</option>
+                  <option value="90">90 min</option>
+                </select>
+                <label>walk</label>
+                <input type="number" id="leavePlanWalk" class="plan-walk" value="3" min="0" max="60">
+                <span class="leave-card__custom-unit">min</span>
+              </div>
+            </div>
+
+            <div id="leaveOptions" class="leave-card__options"></div>
+          </div>
+
           <!-- Journey Planner destination search -->
           <div class="journey-search" id="journeySearch" style="display:none;">
-            <div class="journey-search__label">Nereye gidiyorsun?</div>
+            <div class="journey-search__label">Where are you going?</div>
             <div class="journey-search__wrap">
               <input
                 type="text"
                 class="journey-search__input"
                 id="journeyDestInput"
-                placeholder="Varış durağını ara..."
+                placeholder="Search destination stop..."
                 autocomplete="off"
               >
-              <button class="journey-search__clear" id="journeyClearBtn" title="Temizle">✕</button>
+              <button class="journey-search__clear" id="journeyClearBtn" title="Clear">✕</button>
             </div>
             <div class="journey-search__results" id="journeyDestResults"></div>
           </div>

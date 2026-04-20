@@ -25,7 +25,7 @@ Most teams lose points on UX clarity and real ML usage. "Accuracy > fancy AI." E
 - Docker compose (`docker-compose.yml`) for app + db
 - Tests: `node:test` built-in runner, 53 tests (`npm test`)
 
-Run: `docker compose up -d --build` → http://localhost:3000 → pick Sivas → click any stop.
+Run: `docker compose up -d --build` → http://localhost:3050 → pick Sivas → click any stop.
 First startup trains both models from real data (~125s total).
 If port 3306 conflict: `docker stop vak-vgs-db-1` (user's other project holds 3306).
 

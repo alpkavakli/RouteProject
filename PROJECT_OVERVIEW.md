@@ -227,7 +227,7 @@ npm run test:unit           # Sadece unit testler (sunucu gerektirmez)
 docker compose up -d --build
 
 # Tarayıcıda aç
-open http://localhost:3000
+open http://localhost:3050
 
 # Sivas → herhangi bir durağa tıkla → tavsiye kartlarını gör
 ```
