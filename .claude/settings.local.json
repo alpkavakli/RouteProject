@@ -15,7 +15,8 @@
       "Bash(docker compose logs:*)",
       "Bash(ls C:\\\\\\\\Users\\\\\\\\alpka\\\\\\\\RouteProject)",
       "Bash(npm run *)",
-      "Read(//tmp/**)"
+      "Read(//tmp/**)",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); a=d.get\\('arrivals',[]\\)[:3]; print\\('arrivals:', len\\(d.get\\('arrivals',[]\\)\\)\\); [print\\(' ', x.get\\('routeName'\\), '→', x.get\\('predictedMin'\\),'min · ±', x.get\\('etaBandMin'\\),' · delay', x.get\\('delayMin'\\),' · conf', x.get\\('confidence'\\),'%'\\) for x in a]\")"
     ]
   }
 }

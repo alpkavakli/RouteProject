@@ -102,6 +102,9 @@ async function generateAdvice(stop, arrivals, crowd, pool, allRoutes) {
       delayMin: arrival.delayMin,
       status: arrival.status,
       confidence: arrival.confidence,
+      // Split-conformal ± minutes band from the arrival model — shipped through
+      // so the UI can render "predicted X min ± Y min" beneath the countdown.
+      etaBandMin: arrival.etaBandMin,
       vehicleId: arrival.vehicleId,
       factors: arrival.factors,
       // New advice fields

@@ -3,7 +3,25 @@
 
 const arrivalModel = require('./arrival-model');
 const crowdModel = require('./crowd-model');
-const { loadRealArrivalDataset, loadRealCrowdDataset } = require('./data-generator');
+const { loadRealArrivalDataset, loadRealCrowdDataset, loadPrevStopDelayMap } = require('./data-generator');
+
+// Per-trip previous-stop delay cache, populated at init (see init()).
+//   prevStopDelayMap.get(tripId).get(stopSequence) → delay_min at stop_sequence-1
+// Empty until loadPrevStopDelayMap fills it; misses fall back to recentDelay.
+let prevStopDelayMap = new Map();
+
+function lookupPrevStopDelay(tripId, stopSequence) {
+  if (!tripId || stopSequence == null) return null;
+  const byStop = prevStopDelayMap.get(tripId);
+  if (!byStop) return null;
+  // Exact match first, then the nearest earlier stop we have data for —
+  // covers trips where stop_sequence-1 was never sampled.
+  if (byStop.has(stopSequence)) return byStop.get(stopSequence);
+  for (let s = stopSequence - 1; s >= 1; s--) {
+    if (byStop.has(s)) return byStop.get(s);
+  }
+  return null;
+}
 
 let currentWeather = { temperature: 20, precipitation: 0, windSpeed: 10 };
 let isInitialized = false;
@@ -329,6 +347,16 @@ async function init(pool) {
   // where live recentDelay/weather signals don't apply.
   if (pool) await loadHistoricalPriors(pool);
 
+  // Prev-stop delay lookup — loaded once so live advice requests don't pay
+  // a SQL round-trip for the new prevStopDelay feature.
+  if (pool) {
+    prevStopDelayMap = await loadPrevStopDelayMap(pool);
+    const trips = prevStopDelayMap.size;
+    let cells = 0;
+    for (const m of prevStopDelayMap.values()) cells += m.size;
+    console.log(`   📍 Prev-stop delays cached: ${trips} trips, ${cells} (trip, stop) cells`);
+  }
+
   isInitialized = true;
   const elapsed = ((Date.now() - start) / 1000).toFixed(1);
   console.log(`🧠 All models ready in ${elapsed}s (source: ${dataSource})\n`);
@@ -426,6 +454,10 @@ async function predictArrivals(stop, routes, pool) {
     const precipForPrediction = real && !Number.isNaN(real.tripPrecipitationMm)
       ? real.tripPrecipitationMm : currentWeather.precipitation;
 
+    // Delay at the same trip's previous stop, if we've seen one. Null ⇒
+    // feature degrades to recentDelay inside arrivalModel.predict().
+    const prevStopDelay = lookupPrevStopDelay(vehicleId, segmentIndex);
+
     const prediction = arrivalModel.predict({
       hour,
       dayOfWeek,
@@ -438,6 +470,7 @@ async function predictArrivals(stop, routes, pool) {
       routeAvgDelay: profile.avgDelay,
       recentDelay,
       segmentIndex,
+      prevStopDelay,
     });
 
     const predictedMin = Math.max(1, Math.round(scheduledMin + prediction.predictedDelay));
@@ -477,7 +510,13 @@ async function predictArrivals(stop, routes, pool) {
       // Forest-disagreement uncertainty expressed as a ± minutes band.
       // 1.28·σ covers ~80% of the tree-prediction distribution (normal-
       // approx), mirroring the confidence level we report alongside.
-      etaBandMin: Math.max(1, Math.round(prediction.stddev * 1.28)),
+      // Split-conformal band calibrated on held-out trips at training time.
+      // Replaces the earlier Gaussian 1.28·σ approximation — see
+      // arrival-model.js trainFromRealData() for the calibration procedure
+      // and trainMetrics.conformal.testCoverage80 for the empirical coverage.
+      etaBandMin: prediction.bandMin != null
+        ? prediction.bandMin
+        : Math.max(1, Math.round(prediction.stddev * 1.28)),
       vehicleId,
       occupancy: occupancyLevel,
       factors: prediction.factors,
@@ -656,6 +695,8 @@ async function predictAtTime(stop, routes, pool, targetDate, windowMin = 30) {
       Math.round(scheduledMinOfDay - timeToMinutes(trip.planned_departure))
     );
 
+    const prevStopDelay = lookupPrevStopDelay(trip.trip_id, stopSequence);
+
     const prediction = arrivalModel.predict({
       hour: targetHour,
       dayOfWeek,
@@ -668,6 +709,7 @@ async function predictAtTime(stop, routes, pool, targetDate, windowMin = 30) {
       routeAvgDelay: profile.avgDelay,
       recentDelay,
       segmentIndex: stopSequence,
+      prevStopDelay,
     });
 
     const predictedDelay = prediction.predictedDelay;
@@ -777,7 +819,7 @@ function getModelInfo() {
       features: [
         'hour', 'dayOfWeek', 'isRushHour', 'temperature', 'precipitation',
         'windSpeed', 'scheduledMinutes', 'stopPopularity', 'routeAvgDelay',
-        'recentDelay', 'segmentIndex',
+        'recentDelay', 'segmentIndex', 'prevStopDelay',
       ],
     },
     crowdModel: {

@@ -98,6 +98,16 @@ function generateArrivalSample() {
   // Route segment: further stops accumulate more delay
   delay += (segmentIndex / 10) * rand(0, 2);
 
+  // Previous-stop delay — strong autocorrelation along a trip. Synthesised
+  // as the (still-developing) current delay, nudged by small stop-to-stop
+  // noise. First stop on the route has no predecessor.
+  const prevStopDelay = segmentIndex <= 1 ? 0 : Math.max(0, delay * rand(0.6, 1.1) + gaussianNoise(0, 0.4));
+  // Let the feature feed back into the target so the regressor actually
+  // learns to lean on it.
+  if (segmentIndex > 1) {
+    delay = delay * 0.55 + prevStopDelay * 0.45;
+  }
+
   // Weekend typically less delay
   if (!isWeekday) {
     delay *= rand(0.3, 0.7);
@@ -126,9 +136,10 @@ function generateArrivalSample() {
     profile.avgDelay / 4,               // normalized route avg delay
     recentDelay / 8,                    // normalized recent delay
     segmentIndex / 10,                  // normalized segment
+    prevStopDelay / 10,                 // normalized previous-stop delay
   ];
 
-  return { features, target: delay, meta: { stopId, hour, isRushHour, isRainy, windSpeed, recentDelay } };
+  return { features, target: delay, meta: { stopId, hour, isRushHour, isRainy, windSpeed, recentDelay, prevStopDelay } };
 }
 
 /**
@@ -236,6 +247,7 @@ module.exports = {
   STOP_PROFILES,
   loadRealArrivalDataset,
   loadRealCrowdDataset,
+  loadPrevStopDelayMap,
 };
 
 // ─── Real Data Loaders (Hackathon) ──────────────────────────────────────
@@ -244,9 +256,30 @@ module.exports = {
  * Load real arrival training data from hackathon_arrivals + hackathon_trips
  * Features match the synthetic format so the same model architecture works.
  */
+// Deterministic seeded shuffle (xorshift32). Keeps training reproducible
+// while still breaking the SQL-order correlation that would otherwise put
+// consecutive stops of the same trip next to each other.
+function seededShuffle(arr, seed = 42) {
+  let state = seed >>> 0;
+  const out = arr.slice();
+  for (let i = out.length - 1; i > 0; i--) {
+    state ^= state << 13; state >>>= 0;
+    state ^= state >>> 17;
+    state ^= state << 5;  state >>>= 0;
+    const j = state % (i + 1);
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
 async function loadRealArrivalDataset(pool) {
+  // Self-join pulls the previous stop's delay for the same trip. When
+  // stop_sequence = 1 (or the previous stop's row is missing) prev.delay_min
+  // is NULL and we fall back to the trip's departure_delay_min — i.e. the
+  // "initial lateness" the bus inherited from its start.
   const [rows] = await pool.execute(`
     SELECT
+      a.trip_id,
       a.stop_sequence,
       a.delay_min,
       a.passengers_waiting,
@@ -265,16 +298,22 @@ async function loadRealArrivalDataset(pool) {
       t.wind_speed_kmh,
       t.avg_occupancy_pct,
       t.planned_duration_min,
-      HOUR(a.scheduled_arrival) as hour_of_day
+      HOUR(a.scheduled_arrival) as hour_of_day,
+      prev.delay_min AS prev_delay_min
     FROM hackathon_arrivals a
     JOIN hackathon_trips t ON a.trip_id = t.trip_id
-    ORDER BY RAND()
+    LEFT JOIN hackathon_arrivals prev
+      ON prev.trip_id = a.trip_id
+     AND prev.stop_sequence = a.stop_sequence - 1
   `);
 
   if (rows.length === 0) return null;
 
+  // ─── Featurize ─────────────────────────────────────────────────────────
   const X = [];
   const y = [];
+  const tripIds = [];
+  let withPrev = 0;
 
   for (const r of rows) {
     const hour = r.hour_of_day || 12;
@@ -282,6 +321,14 @@ async function loadRealArrivalDataset(pool) {
     // CSV uses ISO numbering (Mon=0..Sun=6); `is_weekend` is authoritative.
     const isWeekday = !r.is_weekend;
     const isRushHour = isWeekday && ((hour >= 7 && hour <= 9) || (hour >= 17 && hour <= 19));
+
+    // prev-stop delay: the previous sampled stop on the same trip. If we
+    // don't have one we use departure_delay_min as a proxy for the bus's
+    // inherited lateness when it left the terminal.
+    const prevDelayRaw = r.prev_delay_min != null
+      ? Number(r.prev_delay_min)
+      : Number(r.departure_delay_min || 0);
+    if (r.prev_delay_min != null) withPrev++;
 
     const features = [
       hour / 23,
@@ -295,19 +342,84 @@ async function loadRealArrivalDataset(pool) {
       (r.departure_delay_min || 0) / 10,  // route avg delay proxy
       (r.cumulative_delay_min || 0) / 15,  // recent delay
       (r.stop_sequence || 5) / 16,  // segment index (max 16 stops)
+      prevDelayRaw / 10,  // previous-stop delay (new feature)
     ];
 
     X.push(features);
-    y.push(r.delay_min || 0);
+    y.push(Number(r.delay_min) || 0);
+    tripIds.push(r.trip_id);
   }
 
-  // 80/20 split
-  const splitIdx = Math.floor(X.length * 0.8);
-  return {
-    train: { X: X.slice(0, splitIdx), y: y.slice(0, splitIdx) },
-    test: { X: X.slice(splitIdx), y: y.slice(splitIdx) },
-    total: X.length,
+  console.log(`   📈 Prev-stop delay coverage: ${withPrev}/${rows.length} (${(withPrev / rows.length * 100).toFixed(1)}%)`);
+
+  // ─── Trip-grouped 60/20/20 split ───────────────────────────────────────
+  // All rows of a given trip land in the same bucket. This stops
+  // prev-stop-delay from leaking information between splits: without it,
+  // stop 5 of trip T in train and stop 6 of trip T in test would inflate
+  // held-out accuracy. With trip-grouping, test-set trips are fully unseen.
+  const uniqueTrips = Array.from(new Set(tripIds));
+  const shuffledTrips = seededShuffle(uniqueTrips, 42);
+  const nTrips = shuffledTrips.length;
+  const cutTrain = Math.floor(nTrips * 0.60);
+  const cutCal   = Math.floor(nTrips * 0.80);
+
+  const bucketByTrip = new Map();
+  for (let i = 0; i < nTrips; i++) {
+    const b = i < cutTrain ? 'train' : (i < cutCal ? 'cal' : 'test');
+    bucketByTrip.set(shuffledTrips[i], b);
+  }
+
+  const splits = {
+    train: { X: [], y: [] },
+    cal:   { X: [], y: [] },
+    test:  { X: [], y: [] },
   };
+  for (let i = 0; i < X.length; i++) {
+    const b = bucketByTrip.get(tripIds[i]);
+    if (!b) continue;
+    splits[b].X.push(X[i]);
+    splits[b].y.push(y[i]);
+  }
+
+  console.log(`   📐 Trip-grouped split: ${shuffledTrips.length} trips → ${cutTrain} train / ${cutCal - cutTrain} cal / ${nTrips - cutCal} test`);
+  console.log(`   📐 Row counts:         ${splits.train.X.length} train / ${splits.cal.X.length} cal / ${splits.test.X.length} test`);
+
+  return {
+    train: splits.train,
+    cal: splits.cal,
+    test: splits.test,
+    total: X.length,
+    splitStrategy: 'trip-grouped-60-20-20',
+  };
+}
+
+/**
+ * Build a per-trip previous-stop delay lookup map for inference.
+ *
+ *   prevDelayByTrip.get(tripId).get(stopSequence) → delay_min at stop_sequence-1
+ *
+ * Preloaded once at startup so advice requests don't pay a SQL round-trip
+ * for the prevStopDelay feature. Memory cost: ~4.5k rows × 2 keys ≈ trivial.
+ */
+async function loadPrevStopDelayMap(pool) {
+  const map = new Map();
+  try {
+    const [rows] = await pool.execute(`
+      SELECT a.trip_id, a.stop_sequence, prev.delay_min AS prev_delay
+      FROM hackathon_arrivals a
+      LEFT JOIN hackathon_arrivals prev
+        ON prev.trip_id = a.trip_id
+       AND prev.stop_sequence = a.stop_sequence - 1
+      WHERE prev.delay_min IS NOT NULL
+    `);
+    for (const r of rows) {
+      if (!map.has(r.trip_id)) map.set(r.trip_id, new Map());
+      map.get(r.trip_id).set(Number(r.stop_sequence), Number(r.prev_delay));
+    }
+  } catch (err) {
+    console.log(`   ⚠️ Prev-stop delay map failed: ${err.message}`);
+  }
+  return map;
 }
 
 /**

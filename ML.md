@@ -4,7 +4,7 @@ This document explains every ML/statistical component in the app, how they were 
 
 > **TL;DR** — Two Random Forests (arrival delay regressor + 5-class crowd classifier) are trained on real hackathon data at startup and then orchestrated with historical priors, a Dijkstra journey planner, a statistical delay-cascade projector, and a rule-based advisor to produce a **single 1-second decision per bus**: run, wait, board, or take an alternative.
 >
-> **Measured on held-out Sivas data:** arrival MAE **2.0 min**, 70.5 % of predictions within ±2 min; crowd classifier **99.9 %** accuracy across 5 classes.
+> **Measured on held-out *trips* (not rows):** arrival MAE **0.88 min**, **90.3 %** of predictions within ±2 min. Split-conformal ± bands achieve **83.4 % / 96.4 %** empirical coverage for their 80 % / 95 % targets. Crowd classifier **99.4 %** accuracy across 5 classes.
 
 ---
 
@@ -17,11 +17,12 @@ This document explains every ML/statistical component in the app, how they were 
 | Trees | 50 | 50 |
 | `maxFeatures` | 0.7 (≈ 7 of 11 per split) | 0.7 (≈ 6 of 9 per split) |
 | Bagging | `useSampleBagging: true`, `replacement: true`, `seed: 42` | same |
-| Features | 11 | 9 |
+| Features | 12 | 9 |
 | Output | `delayMin` (continuous) + ensemble std-dev | one of `empty / light / moderate / busy / crowded` |
-| Training samples | **3,582** | **2,854** |
-| Test samples | **896** | **714** |
-| Training time (cold) | ~61.5 s | ~57.5 s |
+| Training samples | **2,702** | **2,854** |
+| Calibration samples | **893** *(conformal)* | — |
+| Test samples | **883** *(trip-grouped)* | **714** |
+| Training time (cold) | ~42 s | ~60 s |
 | Persistence | Serialized JSON at `ml/cache/arrival-model.json` | `ml/cache/crowd-model.json` |
 | File | [ml/arrival-model.js](ml/arrival-model.js) | [ml/crowd-model.js](ml/crowd-model.js) |
 
@@ -34,7 +35,7 @@ Both models are retrained on startup if cache is absent; otherwise loaded from d
 ### 2.1 What it predicts
 For a given `(lineId, stopId, scheduledTime, weather, recentObservations)`, it predicts **delay in minutes** relative to the published schedule. Countdown on the UI = scheduled ETA + predicted delay.
 
-### 2.2 Features (11)
+### 2.2 Features (12)
 
 | # | Feature | Why it matters |
 |---|---|---|
@@ -49,45 +50,76 @@ For a given `(lineId, stopId, scheduledTime, weather, recentObservations)`, it p
 | 9 | `routeAvgDelay` | Line-specific baseline chronic lateness |
 | 10 | `recentDelay` | Current network state — if the last 3 buses were late, the next probably is too |
 | 11 | `segmentIndex` (0–1) | Position of this stop along the route — delays compound downstream |
+| 12 | **`prevStopDelay`** | **Delay observed at the same trip's previous stop.** By far the strongest single predictor — delay autocorrelates along a trip. At inference we look this up from a preloaded `(trip, stop_sequence)` map; if missing we fall back to `recentDelay`. **This feature alone halved MAE** (2.0 → 0.9) when added in v2 of the model. |
 
 All features are normalized in `[0, 1]` at inference time (see `features = [...]` block in [ml/arrival-model.js:110-121](ml/arrival-model.js#L110-L121)).
 
 ### 2.3 Training data
-Built by joining `hackathon_arrivals` (per-stop observations with `delay_min`) to `hackathon_trips` (the scheduled plan + weather + occupancy):
+Built by joining `hackathon_arrivals` (per-stop observations with `delay_min`) to `hackathon_trips` (the scheduled plan + weather + occupancy), plus a self-join for the previous-stop delay:
 
-```
-SELECT a.*, t.temperature_c, t.precipitation_mm, t.wind_speed_kmh,
-       t.day_of_week, t.planned_duration_min, t.avg_occupancy_pct
+```sql
+SELECT a.trip_id, a.stop_sequence, a.delay_min, ...
+       t.temperature_c, t.precipitation_mm, t.wind_speed_kmh,
+       t.day_of_week, t.planned_duration_min, t.avg_occupancy_pct,
+       prev.delay_min AS prev_delay_min
   FROM hackathon_arrivals a
   JOIN hackathon_trips t ON a.trip_id = t.trip_id
- WHERE a.delay_min IS NOT NULL
+  LEFT JOIN hackathon_arrivals prev
+         ON prev.trip_id = a.trip_id
+        AND prev.stop_sequence = a.stop_sequence - 1
 ```
 
-4,478 raw arrival rows, cleaned and stratified 80/20 → **3,582 train / 896 test**.
+**4,478 raw arrival rows → trip-grouped 60/20/20 split → 2,702 train / 893 cal / 883 test.**
 
-### 2.4 Measured performance (hackathon_real, held-out 20 %)
+Trip-grouping is the key methodological choice. Naively stratifying rows 80/20 would let the model train on stop 5 of trip T while testing on stop 6 of trip T — with the new `prevStopDelay` feature that is an almost-direct leak (stop 5's delay *is* stop 6's `prevStopDelay` input). Grouping by `trip_id` means every trip lands entirely in train, calibration, or test — the test set is genuinely unseen bus trips. The MAE survives this: **0.88 min** held-out on unseen trips, indistinguishable from the 0.90 we measured under the leakier stratified split, which says the prev-stop-delay signal actually generalizes rather than memorizes.
 
-| Metric | Value |
-|---|---|
-| MAE | **~2.0 min** |
-| Within 1 minute | **43.1 %** |
-| Within 2 minutes | **70.5 %** |
-| Within 3 minutes | ~85 % |
-| Training time | 61.5 s |
-| Inference | ~1 ms per prediction |
+### 2.4 Measured performance
 
-For context: Sivas buses average ~3.2 min of chronic delay with a std-dev of ~4 min, so MAE 2.0 min means we explain a solid chunk of the variance. The model was validated against a synthetic fallback dataset first, but every metric quoted in README/UI is from the real-data path.
+| Metric | v1 (11 features, stratified split) | v2 (12 features, stratified split) | **v3 (12 features, trip-grouped + conformal)** |
+|---|---|---|---|
+| MAE | 2.00 min | 0.90 min | **0.88 min** |
+| Within 1 minute | 43.1 % | 70.8 % | **70.0 %** |
+| Within 2 minutes | 70.5 % | 91.0 % | **90.3 %** |
+| 80 % band empirical coverage | not measured | not measured | **83.4 %** |
+| 95 % band empirical coverage | not measured | not measured | **96.4 %** |
+| Training time | 61.5 s | 68.2 s | **42 s** |
+| Inference | ~1 ms | ~1 ms | ~1 ms |
 
-### 2.5 ETA confidence bands (no extra model)
-A Random Forest is 50 independent tree predictions — their spread *is* a cheap ensemble uncertainty estimate. We compute both the mean and std-dev in a single pass ([ml/arrival-model.js:125-132](ml/arrival-model.js#L125-L132)):
+**v1 → v2:** Adding `prevStopDelay` cut MAE by more than half. Intuition: most of a trip's delay is inherited from earlier in the route — once the bus is 5 min late at stop 3, it's almost certainly still ≥ 5 min late at stop 4. The original feature set had `recentDelay` (average across recent trips, a weak trip-agnostic signal) but no direct handle on "how late is *this* trip right now." That gap is what v2 closed.
 
-```js
-const treePredictions = model.estimators.map(tree => tree.predict([features])[0]);
-const predictedDelay = mean(treePredictions);
-const stddev = Math.sqrt(variance(treePredictions, predictedDelay));
-```
+**v2 → v3:** Methodological improvements rather than accuracy gains:
 
-The UI renders **`round(stddev × 1.28)`** as an "80 % CI" band. Tight agreement across trees → narrow band → "high confidence"; disagreement → wider band → a visible hedge the rider can see. A minimum floor of 0.4 is enforced so even unanimous forests show some band.
+1. **Trip-grouped split** (see §2.3) — the more rigorous evaluation confirms v2's numbers weren't an artefact of row-level leakage. MAE moves only 0.90 → 0.88.
+2. **Split-conformal bands** — the ± minutes band next to every prediction is now calibrated, not assumed Gaussian. See §2.5.
+
+Prev-stop delay coverage at training time: **92.2 %** of arrival rows have a sampled predecessor in `hackathon_arrivals`. The remaining 7.8 % (first stops on a route) fall back to the trip's `departure_delay_min` during training and to `recentDelay` at inference.
+
+For context: Sivas buses average ~3.2 min of chronic delay with a std-dev of ~4 min. MAE 0.88 min on a 4-min std-dev target means the model explains most of the variance — under a test split where every trip is genuinely unseen.
+
+### 2.5 ETA confidence bands — split-conformal calibration
+
+A Random Forest is 50 independent tree predictions — their spread is a cheap ensemble uncertainty estimate, but converting it into a ± minutes band requires a multiplier. The original v2 model used `stddev × 1.28` — the Gaussian 80 % CI. That assumes residuals are near-normal, which they aren't: bus delays have a long right tail, and 1.28 · σ was systematically under-covering the true 80 % quantile.
+
+**v3 replaces the Gaussian assumption with split-conformal calibration:**
+
+1. Train the forest on the 60 % train split (2,702 rows).
+2. On the 20 % **calibration** split (893 rows from unseen trips), compute the non-conformity score for each row: `s_i = |y_i − ŷ_i| / stddev_i`.
+3. The 80 % conformal multiplier is the ⌈(n+1) · 0.80⌉ / n quantile of those scores. Measured value: **`multiplier80 = 1.493`** (higher than 1.28, as expected for heavy tails).
+4. For 95 %: **`multiplier95 = 4.50`** — the right tail is heavy enough that the 95 % band needs roughly 3× the 80 % band.
+5. At inference: `bandMin = round(stddev × multiplier80)`.
+
+**Empirical coverage on the held-out 20 % test split** (separate from cal):
+
+| Target | Multiplier | Empirical coverage |
+|---|---|---|
+| 80 % | 1.493 · σ | **83.4 %** |
+| 95 % | 4.50 · σ  | **96.4 %** |
+
+Both slightly over-cover the target, which is acceptable (conservative). Under exchangeability the expected coverage is exactly the target — the small over-coverage is from the non-parametric quantile's discrete steps on a ~900-row calibration set.
+
+**Why this matters for demo judging:** the ± numbers the UI shows now have a real meaning. "± 7 min" does *not* mean "there's a 68 % chance it arrives within ±7 min" (one-σ interpretation, wrong) — it means "by direct measurement on held-out trips, 83 % of real arrivals landed within ±7 min of this forecast."
+
+Implementation: the calibration runs once at training time in [ml/arrival-model.js](ml/arrival-model.js) `trainFromRealData()`; `predict()` then multiplies `stddev × multiplier80` at inference and returns `bandMin` directly. Cost: zero latency impact — one extra multiplication.
 
 ---
 
@@ -280,7 +312,7 @@ Every number in this document was pulled from that endpoint.
 
 ## 12. Known limitations & honest trade-offs
 
-- **Chronological split vs. stratified split.** We stratify 80/20 across arrival observations; we did not cross-validate across distinct days. On a 14-day dataset this is acceptable but not ideal — a time-forward split might drop MAE by ~0.2 min or reveal drift.
+- **No true time-forward split.** The hackathon dataset has `day_of_week` but no calendar date, so we can't do walk-forward CV across weeks. We use **trip-grouped 60/20/20** (see §2.3) as the strongest defensible substitute — it blocks the most likely leak (stop-level row adjacency) but can't catch temporal drift across weeks.
 - **`empty` recall at 50 %.** Border between `empty` and `light` at 15 % occupancy is fuzzy. Easy fix if needed: collapse to 4 classes (`light+empty / moderate / busy / crowded`) — or just live with it because the borderline is a behavioural distinction a rider doesn't care about.
 - **No real GPS for live bus positions.** They are schedule + ML delay — clearly labelled in the UI. A future enhancement would consume an AVL stream; the interpolation math is already in place.
 - **OSRM public demo reliability.** Free tier, 1.5 s timeout, haversine fallback. For production we would pin a self-hosted OSRM instance.
@@ -293,9 +325,9 @@ Every number in this document was pulled from that endpoint.
 Listed roughly in order of expected ROI:
 
 1. **Gradient Boosted Trees (LightGBM / XGBoost via ONNX).** Random Forest is a robust baseline but GBMs typically shave 10–20 % off MAE on tabular regression with the same features. Shipping this as an optional Python microservice would be a 2-day upgrade.
-2. **Temporal cross-validation.** Replace stratified split with a 12-train-day / 2-test-day walk-forward. The MAE that survives that is the MAE to quote publicly.
-3. **Neighbour-stop features.** Current `recentDelay` is for the *same* stop. Adding *the same trip's delay at the previous stop* would make the regressor near-perfect on the last few stops of a route — the information is already in the DB.
-4. **Conformal prediction bands.** Replace `stddev × 1.28` with split-conformal calibration on residuals for a true guaranteed 80 % / 95 % coverage instead of a normality assumption.
+2. ~~**Temporal cross-validation.**~~ **Partly shipped in v3** — we switched to **trip-grouped 60/20/20** because the dataset has no calendar date (`day_of_week` only). Trip-grouping closes the row-level leak that a stratified split would have (stops 1-5 of trip T in train, stops 6-8 of T in test), and the MAE survived: 0.90 → 0.88. A true walk-forward across weeks would require dated data we don't have.
+3. ~~**Neighbour-stop features.**~~ **Shipped in v2.** Added `prevStopDelay` — the same trip's delay at the previous stop — joined at training time via self-join on `(trip_id, stop_sequence - 1)` and served at inference from an in-memory `(trip_id → stop_sequence → delay_min)` map. **MAE dropped 2.0 → 0.9 min**, within-2-min rose from 70.5 % → 91.0 %. 92.2 % training coverage; the rest fall back to `departure_delay_min` / `recentDelay`.
+4. ~~**Conformal prediction bands.**~~ **Shipped in v3** — split-conformal calibration on a held-out 20 % cal set replaces the Gaussian `stddev × 1.28` with measured multipliers (`1.493` for 80 %, `4.50` for 95 %). Empirical coverage on the separate test split: **83.4 % / 96.4 %** vs. target 80 % / 95 %. See §2.5.
 5. **Crowd model → ordinal regression.** Five classes have a natural order — modelling them as ordinal (cumulative link) instead of nominal avoids the `empty↔light` adjacency misclassification that dominates our error.
 6. **Better delay cascade.** A small GRU over `(stop_sequence, hour_of_day)` sequences would catch non-linear snowball patterns the current additive model misses. Worth it only after more data — current 4.4 k arrivals is borderline for sequence models.
 7. **Per-route models.** Five lines, fairly different behaviours. Training one forest per line (small trees, 30 estimators each) could capture route-specific dynamics better than a single global model, at the cost of deployment complexity.
@@ -303,4 +335,4 @@ Listed roughly in order of expected ROI:
 9. **Feedback loop / online learning.** Every served prediction could be logged, then compared to the realized delay once the bus arrives, feeding a slow retrain every hour. This is the single biggest durable accuracy gain — but requires ~1 week of production traffic to matter.
 10. **Explainability panel.** SHAP values per prediction, rendered as a mini-bar in the advice card ("of this 4-min delay: +2 min rush, +1 min rain, +1 min segment drift"). More trust than raw numbers give.
 
-If we had another two days, in this order: **#3 → #1 → #4**. They compound: better features feed a better model whose honest bands replace the Gaussian approximation.
+If we had another two days, in this order: ~~#3~~ (done) **→ #1 → #4**. They compound: better features feed a better model whose honest bands replace the Gaussian approximation.

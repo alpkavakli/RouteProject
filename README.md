@@ -12,11 +12,19 @@ Riders don't trust static timetables because delays, crowding, and rainy days br
 
 | Model | Metric | Value |
 |---|---|---|
-| Arrival (RF Regressor) | MAE | **~2.0 min** |
-| Arrival | Within 2 min | **70.5 %** |
-| Crowd (RF Classifier, 5-class) | Accuracy | **99.9 %** |
+| Arrival (RF Regressor, 12 features) | MAE | **0.88 min** |
+| Arrival | Within 1 min | **70.0 %** |
+| Arrival | Within 2 min | **90.3 %** |
+| Arrival — conformal ± band | Empirical 80 % coverage | **83.4 %** (target 80 %) |
+| Arrival — conformal ± band | Empirical 95 % coverage | **96.4 %** (target 95 %) |
+| Crowd (RF Classifier, 5-class) | Accuracy | **99.4 %** |
 | Live inference | Latency | **~1 ms / prediction** |
 | `/advice` endpoint | End-to-end | **20–80 ms** |
+
+> **How those numbers are measured:**
+> - **Trip-grouped 60/20/20 split.** All arrival rows of the same trip go to the same bucket (train / calibration / test), so the model is evaluated on *trips it has never seen*. This blocks the leak that a row-level random split would create for the new `prevStopDelay` feature.
+> - **Split-conformal ± bands.** The "± X min" under every countdown is a calibrated band, not a Gaussian approximation. The multiplier is tuned on a held-out calibration set to hit the target coverage — and the table above reports the *empirical* coverage on a separate test set, not the nominal target.
+> - Full derivation and rationale in [ML.md §2](ML.md#2-arrival-delay-model).
 
 ### 📱 Responsive & mobile-first
 
