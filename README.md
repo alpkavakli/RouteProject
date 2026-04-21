@@ -260,5 +260,6 @@ npm run test:integration     # Integration tests (server must be running)
 
 ## Documentation
 
+- **[ML.md](ML.md)** — **Full ML architecture & metrics.** Both Random Forests, their features, measured performance on held-out real data, the confidence-band math, journey-planner graph, delay-cascade statistical model, advisor rules, and a roadmap of next-iteration improvements. **Judges start here.**
 - **[HANDOFF.md](HANDOFF.md)** — 2-minute context brief for a new contributor (or a fresh AI session): goals, deadlines, what's built, known quirks, open work.
 - **[DOCUMENTATION.md](DOCUMENTATION.md)** — Deeper technical breakdown of the models, features, and data pipeline.
