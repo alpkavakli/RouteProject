@@ -90,6 +90,18 @@
   font-weight: 500;
 }
 
+/* ETA confidence band — "± 3 min · 80%". Shown under the main countdown
+   as a soft, secondary line so the big number stays the focal point. */
+.advice-card__eta-band {
+  margin-top: 2px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+  cursor: help;
+}
+
 /* ─── Metrics Grid ─────────────────────────────────────────────────── */
 .advice-card__metrics {
   display: grid;
@@ -245,4 +257,164 @@
   0% { transform: scale(1); }
   50% { transform: scale(1.05); }
   100% { transform: scale(1); }
+}
+
+/* ─── Bus Path (click-to-expand stops list under each advice card) ──── */
+
+.advice-card__path-toggle {
+  margin-top: 10px;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.advice-card__path-toggle:hover {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+.advice-card__path-toggle-chev {
+  font-size: 12px;
+  transition: transform 0.2s ease;
+}
+.advice-card__path-toggle[aria-expanded="true"] .advice-card__path-toggle-chev {
+  transform: rotate(180deg);
+}
+
+.advice-card__path {
+  margin-top: 10px;
+  padding: 10px;
+  background: rgba(0, 0, 0, 0.02);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+}
+.advice-card__path-loading,
+.advice-card__path-empty {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: center;
+  padding: 6px;
+}
+
+.bus-path__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  color: var(--text-muted);
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.bus-path__cascade-note {
+  color: var(--accent-amber, #f59e0b);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.bus-path__list {
+  display: flex;
+  flex-direction: column;
+}
+
+.bus-path__row {
+  display: grid;
+  grid-template-columns: 22px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 28px;
+  font-size: 12px;
+}
+.bus-path__row.is-here .bus-path__name {
+  color: var(--accent-blue);
+  font-weight: 700;
+}
+
+.bus-path__rail {
+  position: relative;
+  height: 100%;
+  display: flex;
+  justify-content: center;
+}
+.bus-path__dot {
+  position: relative;
+  z-index: 1;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid;
+  margin-top: 8px;
+  flex-shrink: 0;
+}
+.bus-path__dot.here {
+  width: 12px;
+  height: 12px;
+  box-shadow: 0 0 0 3px rgba(79, 140, 255, 0.25);
+}
+.bus-path__dot.end {
+  background: var(--bg-card) !important;
+}
+.bus-path__line {
+  position: absolute;
+  top: 16px;
+  bottom: -2px;
+  width: 2px;
+  opacity: 0.5;
+}
+
+.bus-path__info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.bus-path__name {
+  color: var(--text-primary);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bus-path__here-tag {
+  background: var(--accent-blue);
+  color: white;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 3px;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+.bus-path__delay {
+  font-size: 10px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.bus-path__eta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.bus-path__eta-clock {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.bus-path__eta-min {
+  font-size: 10px;
+  color: var(--text-muted);
 }

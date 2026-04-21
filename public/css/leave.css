@@ -11,17 +11,85 @@
 
 .leave-card__header {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
+  align-items: center;
   gap: var(--sp-sm);
   margin-bottom: var(--sp-sm);
 }
+
+.leave-card__toggle {
+  /* Reset button defaults so it blends with the card */
+  background: transparent;
+  border: 0;
+  width: 100%;
+  padding: 0;
+  font-family: inherit;
+  cursor: pointer;
+  color: inherit;
+  position: relative;
+}
+.leave-card__toggle:hover .leave-card__title,
+.leave-card__toggle:focus-visible .leave-card__title { color: var(--accent-blue); }
 
 .leave-card__title {
   font-size: var(--fs-sm);
   font-weight: 700;
   color: var(--text-primary);
+  transition: color 0.15s ease;
 }
+
+.leave-card__summary {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.leave-card__chevron {
+  font-size: 14px;
+  color: var(--text-muted);
+  transition: transform 0.2s ease;
+  display: inline-block;
+}
+
+/* Expanded state: title on the left, chevron on the right */
+.leave-card:not(.is-collapsed) .leave-card__header {
+  justify-content: space-between;
+}
+.leave-card:not(.is-collapsed) .leave-card__summary {
+  display: none;
+}
+.leave-card:not(.is-collapsed) .leave-card__chevron {
+  margin-left: auto;
+}
+
+/* Collapsed state: vertically centered row (title + summary left, chevron right) */
+.leave-card.is-collapsed .leave-card__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-sm);
+  min-height: 36px;
+}
+.leave-card.is-collapsed .leave-card__title {
+  line-height: 1.2;
+}
+.leave-card.is-collapsed .leave-card__summary {
+  flex: 1;
+  text-align: right;
+  line-height: 1.2;
+}
+.leave-card.is-collapsed .leave-card__mode,
+.leave-card.is-collapsed .leave-card__walk,
+.leave-card.is-collapsed .leave-card__plan,
+.leave-card.is-collapsed .leave-card__options {
+  display: none !important;
+}
+.leave-card.is-collapsed { padding-top: var(--sp-sm); padding-bottom: var(--sp-sm); }
+.leave-card.is-collapsed .leave-card__header { margin-bottom: 0; }
+.leave-card.is-collapsed .leave-card__summary:empty { display: none; }
 
 .leave-card__hint {
   font-size: var(--fs-xs);

@@ -153,12 +153,60 @@ const UI = (() => {
     countdownIntervals = [];
   }
 
-  function renderAdvice(adviceData) {
+  // Build a leg-by-leg stop list for a single bus (expanded under its card).
+  // Uses the cascade projection's per-stop delays on top of the bus's
+  // predicted arrival at the user's stop. Assumes ~4 min per segment
+  // (matches ml/journey.js AVG_MIN_PER_SEGMENT) plus delay growth.
+  function _renderBusPath(cascade, opt, routeColor) {
+    const SEG_MIN = 4;
+    const arrivalMs = Date.now() + (opt.predictedMin || 0) * 60 * 1000;
+    const startDelay = cascade.stops[0].predictedDelay || 0;
+
+    const rows = cascade.stops.map((s, i) => {
+      const segDelta = (s.predictedDelay || 0) - startDelay;
+      const etaMs = arrivalMs + i * SEG_MIN * 60 * 1000 + segDelta * 60 * 1000;
+      const minFromNow = Math.max(0, Math.round((etaMs - Date.now()) / 60000));
+      const clock = _formatClock(new Date(etaMs));
+      const isHere = i === 0;
+      const isEnd = i === cascade.stops.length - 1;
+      const dotCls = isHere ? 'here' : isEnd ? 'end' : '';
+      const delayTag = s.predictedDelay >= 3
+        ? `<span class="bus-path__delay" style="color:${s.color}">+${Math.round(s.predictedDelay)}m</span>`
+        : '';
+      return `
+        <div class="bus-path__row ${isHere ? 'is-here' : ''}">
+          <div class="bus-path__rail">
+            <span class="bus-path__dot ${dotCls}" style="border-color:${routeColor};background:${isHere ? routeColor : 'var(--bg-card)'}"></span>
+            ${!isEnd ? `<span class="bus-path__line" style="background:${routeColor}"></span>` : ''}
+          </div>
+          <div class="bus-path__info">
+            <span class="bus-path__name">${s.stopName}${isHere ? ' <span class="bus-path__here-tag">you are here</span>' : ''}</span>
+            ${delayTag}
+          </div>
+          <div class="bus-path__eta">
+            <span class="bus-path__eta-clock">${clock}</span>
+            <span class="bus-path__eta-min">${minFromNow} min</span>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    return `
+      <div class="bus-path__header">
+        <span>${cascade.stops.length} stops to ${cascade.terminalStopName || 'end'}</span>
+        ${cascade.delayGrowth > 2 ? `<span class="bus-path__cascade-note">delay grows +${cascade.delayGrowth} min</span>` : ''}
+      </div>
+      <div class="bus-path__list">${rows}</div>
+    `;
+  }
+
+  function renderAdvice(adviceData, fromStopId) {
     clearCountdowns();
     const container = document.getElementById('arrivalCards');
     container.innerHTML = '';
 
     if (!adviceData || !adviceData.options) return;
+    const currentStopId = fromStopId || adviceData.stopId;
 
     const options = adviceData.options;
     const bestIdx = (typeof adviceData.bestOption === 'number' && adviceData.bestOption >= 0)
@@ -310,12 +358,53 @@ const UI = (() => {
             <span class="recommendation-chip__text">${opt.recommendation.text}</span>
           </div>
         ` : ''}
+
+        <button type="button" class="advice-card__path-toggle" data-role="path-toggle" aria-expanded="false">
+          <span class="advice-card__path-toggle-label">Show stops on this bus</span>
+          <span class="advice-card__path-toggle-chev" aria-hidden="true">▾</span>
+        </button>
+        <div class="advice-card__path" data-role="path-body" hidden></div>
       `;
 
       // Left border color
       card.style.borderLeftColor = opt.routeColor;
       card.style.borderLeftWidth = '3px';
       card.style.borderLeftStyle = 'solid';
+
+      // Bus-path expand/collapse — lazy-loads cascade stops for this route.
+      const pathToggle = card.querySelector('[data-role="path-toggle"]');
+      const pathBody = card.querySelector('[data-role="path-body"]');
+      if (pathToggle && pathBody && currentStopId && !opt.serviceEnded) {
+        pathToggle.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          const expanded = pathToggle.getAttribute('aria-expanded') === 'true';
+          if (expanded) {
+            pathBody.hidden = true;
+            pathToggle.setAttribute('aria-expanded', 'false');
+            pathToggle.querySelector('.advice-card__path-toggle-label').textContent = 'Show stops on this bus';
+            return;
+          }
+          pathToggle.setAttribute('aria-expanded', 'true');
+          pathToggle.querySelector('.advice-card__path-toggle-label').textContent = 'Hide stops';
+          pathBody.hidden = false;
+          if (!pathBody.dataset.loaded) {
+            pathBody.innerHTML = `<div class="advice-card__path-loading">Loading stops…</div>`;
+            try {
+              const cascade = await DataService.getCascade(opt.routeId, currentStopId);
+              if (!cascade || !Array.isArray(cascade.stops) || cascade.stops.length < 2) {
+                pathBody.innerHTML = `<div class="advice-card__path-empty">No downstream stops.</div>`;
+                return;
+              }
+              pathBody.innerHTML = _renderBusPath(cascade, opt, opt.routeColor);
+              pathBody.dataset.loaded = '1';
+            } catch (err) {
+              pathBody.innerHTML = `<div class="advice-card__path-empty">Could not load stops.</div>`;
+            }
+          }
+        });
+      } else if (pathToggle) {
+        pathToggle.style.display = 'none';
+      }
 
       container.appendChild(card);
 
@@ -395,6 +484,11 @@ const UI = (() => {
             <div class="advice-card__countdown" id="cd-${idx}" style="color:${arrival.routeColor}">
               ${arrival.predictedMin}<span class="advice-card__countdown-unit"> min</span>
             </div>
+            ${arrival.etaBandMin ? `
+              <div class="advice-card__eta-band" title="Random-forest tree disagreement — higher spread means less certain.">
+                ±${arrival.etaBandMin} min · ${arrival.confidence}%
+              </div>
+            ` : ''}
           </div>
         </div>
         <div class="advice-card__bottom">
@@ -614,8 +708,8 @@ const UI = (() => {
         // Transfer leg (walk / dolmus)
         const icon = leg.type === 'dolmus' ? '🚐' : '🚶';
         const label = leg.type === 'dolmus'
-          ? `${leg.transferMin} min minibus/taxi (${(leg.distM/1000).toFixed(1)}km)`
-          : `${leg.transferMin} min walk (${leg.distM}m)`;
+          ? `Minibus/taxi ${(leg.distM/1000).toFixed(1)}km (${leg.transferMin} min)`
+          : `Walk ${leg.distM}m (${leg.transferMin} min)${leg.routed ? '' : ''}`;
         pathHTML += `
           <div class="journey-path__transfer">
             <div class="journey-path__transfer-icon">${icon}</div>
@@ -779,6 +873,11 @@ const UI = (() => {
       .slice(0, 3);
   }
 
+  function _setLeaveSummary(text) {
+    const el = document.getElementById('leaveCollapseSummary');
+    if (el) el.textContent = text || '';
+  }
+
   function renderLeaveAdvisor(adviceData, walkMin) {
     const container = document.getElementById('leaveAdvisorCard');
     const slot = document.getElementById('leaveOptions');
@@ -793,6 +892,7 @@ const UI = (() => {
     if (serviceEnded) {
       const first = adviceData.options[0];
       container.style.display = 'block';
+      _setLeaveSummary(`No service · first bus ${first.firstBusTimeStr || '--:--'}`);
       slot.innerHTML = `
         <div class="leave-option leave-option--ended">
           <div class="leave-option__time">
@@ -811,11 +911,26 @@ const UI = (() => {
     const picks = _pickLeaveOptions(adviceData, walkMin);
     if (picks.length === 0) {
       container.style.display = 'block';
+      _setLeaveSummary('No buses coming soon');
       slot.innerHTML = `<div class="leave-empty">No buses coming soon.</div>`;
       return;
     }
 
     container.style.display = 'block';
+
+    // Summary shown when the card is collapsed — best (soonest) option.
+    const best = picks[0];
+    if (best) {
+      const now = Date.now();
+      if (best.missed) {
+        _setLeaveSummary('Missed · check alternatives');
+      } else if (best.leaveInMin <= 0) {
+        _setLeaveSummary(`Go now · ${best.opt.routeId} in ${best.predictedMin} min`);
+      } else {
+        const leaveClock = _formatClock(new Date(now + best.leaveInMin * 60 * 1000));
+        _setLeaveSummary(`Leave ${leaveClock} · ${best.opt.routeId} (${walkMin} min walk)`);
+      }
+    }
 
     const now = Date.now();
     slot.innerHTML = picks.map(({ opt, predictedMin, leaveInMin, busIndex, missed }) => {
@@ -863,7 +978,14 @@ const UI = (() => {
 
   function clearLeaveAdvisor() {
     const container = document.getElementById('leaveAdvisorCard');
-    if (container) container.style.display = 'none';
+    if (container) {
+      container.style.display = 'none';
+      // Reset to collapsed so next stop selection shows the crowd card
+      container.classList.add('is-collapsed');
+      const toggle = document.getElementById('leaveCollapseToggle');
+      if (toggle) toggle.setAttribute('aria-expanded', 'false');
+    }
+    _setLeaveSummary('');
   }
 
   // ─── Schedule-a-Ride rendering ─────────────────────────────────────
@@ -872,6 +994,7 @@ const UI = (() => {
     const slot = document.getElementById('leaveOptions');
     if (!container || !slot) return;
     container.style.display = 'block';
+    _setLeaveSummary('Checking the schedule…');
     slot.innerHTML = `<div class="leave-empty">Checking the schedule…</div>`;
   }
 
@@ -892,6 +1015,7 @@ const UI = (() => {
     container.style.display = 'block';
 
     if (!data || !Array.isArray(data.options) || data.options.length === 0) {
+      _setLeaveSummary('No buses in this window');
       slot.innerHTML = `<div class="leave-empty">No buses in this window. Try widening it or pick another time.</div>`;
       return;
     }
@@ -899,6 +1023,10 @@ const UI = (() => {
     const picks = data.options.slice(0, 4);
     const bestIdx = Number.isInteger(data.bestMatch) ? data.bestMatch : 0;
     const targetMs = new Date(data.targetTime).getTime();
+    const bestPick = picks[bestIdx] || picks[0];
+    if (bestPick) {
+      _setLeaveSummary(`Arrive ${_formatClockFromIso(bestPick.predictedAt)} · ${bestPick.routeId}`);
+    }
 
     slot.innerHTML = picks.map((opt, i) => {
       const tag = _crowdToTag(opt.crowdLevel);

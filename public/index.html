@@ -51,7 +51,7 @@
     <header class="header">
       <div class="header__brand">
         <div class="header__logo">
-          <img src="/assets/logo.png" alt="Albatros" style="width:28px;height:28px;object-fit:contain;">
+          <img src="/assets/logo.png" alt="Albatros" class="header__logo-img">
         </div>
         <div>
           <div class="header__title">Route Albatros</div>
@@ -108,6 +108,18 @@
 
     <!-- ─── Side Panel ───────────────────────────────────────────── -->
     <aside class="panel" id="panel">
+      <!-- Mobile drag handle to resize map/panel split -->
+      <div class="panel__drag-handle" id="panelDragHandle" role="separator" aria-label="Drag to resize panel">
+        <span class="panel__drag-grip" aria-hidden="true"></span>
+        <button type="button" class="panel__fullsize-btn" id="panelFullsizeBtn" aria-label="Toggle full-size panel" title="Toggle full-size">
+          <svg class="panel__fullsize-icon panel__fullsize-icon--expand" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polyline points="18 15 12 9 6 15"/>
+          </svg>
+          <svg class="panel__fullsize-icon panel__fullsize-icon--collapse" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polyline points="6 9 12 15 18 9"/>
+          </svg>
+        </button>
+      </div>
       <!-- Empty state -->
       <div class="panel__empty" id="panelEmpty">
         <div class="panel__empty-icon">
@@ -140,13 +152,15 @@
           <div id="cascadeCard" style="display:none;"></div>
 
           <!-- Leave-by Advisor — two modes: Leave now (walk-time) / Plan a ride (datetime) -->
-          <div id="leaveAdvisorCard" class="leave-card" style="display:none;">
-            <div class="leave-card__header">
+          <div id="leaveAdvisorCard" class="leave-card is-collapsed" style="display:none;">
+            <button class="leave-card__header leave-card__toggle" type="button" id="leaveCollapseToggle" aria-expanded="false">
               <span class="leave-card__title" id="leaveCardTitle">When should I leave?</span>
-              <div class="leave-card__mode" id="leaveModeTabs">
-                <button class="leave-mode active" data-mode="now">Leave now</button>
-                <button class="leave-mode" data-mode="plan">Plan a ride</button>
-              </div>
+              <span class="leave-card__summary" id="leaveCollapseSummary"></span>
+              <span class="leave-card__chevron" aria-hidden="true">▾</span>
+            </button>
+            <div class="leave-card__mode" id="leaveModeTabs">
+              <button class="leave-mode active" data-mode="now">Leave now</button>
+              <button class="leave-mode" data-mode="plan">Plan a ride</button>
             </div>
 
             <!-- Mode A: Leave now (existing walk-minutes picker) -->

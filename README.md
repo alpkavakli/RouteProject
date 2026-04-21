@@ -4,7 +4,30 @@
 
 Riders don't trust static timetables because delays, crowding, and rainy days break them. This app predicts real arrival times for Sivas buses using the hackathon dataset, classifies how crowded each bus will be on a 5-level scale, and — crucially — turns those predictions into a single 1-second decision: **run, wait, board, or take an alternative.** Built for the 2026 Predictive Transit hackathon.
 
+> **📘 Full ML documentation & measured metrics: [ML.md](ML.md)** — architecture, feature lists, training data, per-class precision/recall, confidence-band math, and the rationale behind every modelling choice. **Judges should start here.**
+
 ![Node.js](https://img.shields.io/badge/Node.js-20+-green) ![MySQL](https://img.shields.io/badge/MySQL-8.0-blue) ![ML](https://img.shields.io/badge/ML-Random%20Forest-purple) ![Data](https://img.shields.io/badge/Data-Real%20Sivas-orange) ![Docker](https://img.shields.io/badge/Docker-Ready-blue) ![Tests](https://img.shields.io/badge/Tests-53%20passing-brightgreen)
+
+### Measured performance — [ML.md](ML.md)
+
+| Model | Metric | Value |
+|---|---|---|
+| Arrival (RF Regressor) | MAE | **~2.0 min** |
+| Arrival | Within 2 min | **70.5 %** |
+| Crowd (RF Classifier, 5-class) | Accuracy | **99.9 %** |
+| Live inference | Latency | **~1 ms / prediction** |
+| `/advice` endpoint | End-to-end | **20–80 ms** |
+
+### 📱 Responsive & mobile-first
+
+The UI is **designed primarily for mobile riders** — the people actually standing at a bus stop trying to decide whether to run. The full app is fully responsive from 320 px phones up through desktop:
+
+- **Mobile (≤ 860 px):** map on top, advice panel below with a **drag handle** you can pull up to resize the split, plus a **full-size toggle** that expands the panel to the whole screen. Touch, pointer, and mouse events are all supported (tested on iPhone 12 emulation and real devices).
+- **Tablet / desktop:** side-by-side layout with a fixed advice panel and a full-viewport map.
+- **Dark / light theme:** auto-detects `prefers-color-scheme`, persists user choice, and runs a pre-paint bootstrap so there's no light-to-dark flash on reload.
+- **Everything is reachable with one thumb** — drag handle, full-size button, search, city toggle, theme toggle, and every advice chip.
+
+A desktop experience on mobile is a demo, not a product. This is the other way round.
 
 ---
 
@@ -54,6 +77,7 @@ The big number and the recommendation chip are the **1-second read**. Everything
 | Signal | Source | Range | What it answers |
 |---|---|---|---|
 | **Countdown** | Random Forest regressor on scheduled time + real delays + weather + segment | minutes | "How long until it gets here?" |
+| **ETA confidence band** | Std-dev across the 50 RF tree predictions × 1.28 ≈ 80% CI | `± X min · Y%` | "How certain is that number?" |
 | **Yoğunluk** (crowd level) | Real `avg_occupancy_pct` from `hackathon_trips`, classified into 5 bands | empty / light / moderate / busy / crowded | "How packed is this bus?" |
 | **Doluluk** (occupancy %) | Same real trip average | 0–100 % | Exact fill level |
 | **Koltuk** (seats) | `bus_capacity × (1 − occupancy)` | integer | "Will I get a seat?" |
@@ -72,6 +96,24 @@ The big number and the recommendation chip are the **1-second read**. Everything
 | 🔄 | **Alternative** — "İlk durağa git — boş otobüse bin (2 durak geri)" | Long ride, high occupancy, terminal stop nearby |
 | ✅ | **Board** — "Bin — stres seviyesi düşük" | Default: stress score < 50 |
 | 😤 | **Board** — "Kalabalık ama alternatifsiz — bin" | High stress but no better option |
+
+---
+
+## Beyond the Advice Card
+
+Four features extend the base product into a full navigation app:
+
+### 🗺️ Multi-Modal Journey Planner (`/api/journey`)
+Dijkstra over a transit graph (bus edges + walking transfers + dolmus fallback), producing leg-by-leg plans like `Walk 180m (2 min) → L03 at 09:12 → ride 14 min → walk 90m (1 min)`. Walk legs are routed through **OSRM** (public `router.project-osrm.org/foot` server, 1.5s timeout, 500-entry LRU cache, silent haversine fallback) so the map shows real sidewalks, not straight lines. Module: [ml/journey.js](ml/journey.js).
+
+### 🎯 ETA Confidence Bands
+Each Random Forest produces 50 tree predictions. The spread between them is the model's own uncertainty. We expose that as `stddev` in [ml/arrival-model.js](ml/arrival-model.js#L138-L145), convert it to a minute-band via `round(stddev × 1.28)` (≈ 80% CI assuming near-normal residuals), and render it under every countdown: **"4 min · ± 2 min · 84%"**. Built to deepen trust — riders see when the model is hedging vs. confident.
+
+### 📉 Delay Cascade (`/api/cascade`)
+Predicts how delay snowballs downstream along a line using `cumulative_delay_min` history per `(route, stop_sequence)`. Renders a green → red gradient polyline on the map plus a side-panel summary card showing delay at each stop. L01 is the demo-winning route — delay grows from ~1 min at stop 1 to ~15 min by stop 13. Module: [ml/cascade.js](ml/cascade.js).
+
+### 🚌 Live Bus Positions (`/api/live-buses`)
+For every trip active right now (matched on DOW + time window in `hackathon_trips`), we estimate its position by interpolating along the ordered stop sequence with the RF's predicted delay applied. Frontend polls every 4 s; `requestAnimationFrame`-tweened markers slide smoothly without fighting Leaflet's own pan transforms. **No GPS** — it's schedule + ML delay, and we call that out in the UI. Module: [ml/live.js](ml/live.js).
 
 ---
 
@@ -123,9 +165,12 @@ The hero endpoint is `/api/stops/:id/advice`. Everything else is supporting.
 
 | Endpoint | Returns |
 |---|---|
-| `GET /api/stops/:id/advice` | **Full advice payload**: ML arrivals + stress + seats + recommendations |
+| `GET /api/stops/:id/advice` | **Full advice payload**: ML arrivals + stress + seats + recommendations + `etaBandMin` |
 | `GET /api/stops/:id/arrivals` | Raw arrival predictions only |
 | `GET /api/stops/:id/crowd` | Stop-level crowd classification |
+| `GET /api/journey?from=X&to=Y` | **Multi-modal journey**: Dijkstra over bus edges + OSRM-routed walk legs |
+| `GET /api/cascade?routeId=X&fromStopId=Y` | Delay propagation along a route — map gradient + per-stop delay |
+| `GET /api/live-buses` | Live-position estimate for every active trip (schedule + ML delay) |
 | `GET /api/stops?city=Sivas` | All Sivas stops with routes |
 | `GET /api/routes?city=Sivas` | All 5 Sivas routes |
 | `GET /api/weather?city=Sivas` | Seeded weather (from trip averages) |

@@ -2,9 +2,16 @@
 .app {
   display: grid;
   grid-template-rows: auto 1fr;
-  grid-template-columns: 1fr 420px;
+  grid-template-columns: 1fr var(--panel-w, 420px);
   height: 100vh;
   overflow: hidden;
+}
+
+/* While dragging the resizer, block text selection and force the cursor so
+   feedback stays consistent even when the pointer moves off the 18px grip. */
+body.is-resizing { user-select: none; cursor: ns-resize; }
+@media (min-width: 861px) {
+  body.is-resizing { cursor: ew-resize; }
 }
 
 /* ─── Header ─────────────────────────────────────────────────────────── */
@@ -27,11 +34,18 @@
 }
 
 .header__logo {
-  width: 36px;
-  height: 36px;
+  width: 44px;
+  height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
+}
+
+.header__logo-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 .header__title {
@@ -1510,18 +1524,115 @@
 
 /* ─── Responsive ─────────────────────────────────────────────────────── */
 
+/* Desktop: vertical strip on the left edge of the panel — drag to resize
+   the column width. On mobile the block below converts it into a horizontal
+   top-bar instead. */
+.panel { position: relative; }
+.panel__drag-handle {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 8px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: ew-resize;
+  touch-action: none;
+  user-select: none;
+  z-index: 5;
+  background: transparent;
+}
+.panel__drag-handle .panel__drag-grip {
+  width: 3px;
+  height: 44px;
+  border-radius: 2px;
+  background: var(--text-muted);
+  opacity: 0.25;
+  transition: opacity 0.15s ease, background 0.15s ease;
+}
+.panel__drag-handle:hover .panel__drag-grip,
+.panel__drag-handle.is-dragging .panel__drag-grip {
+  opacity: 0.9;
+  background: var(--accent-blue);
+}
+
+/* Full-size toggle — hidden on desktop, shown only on mobile (see breakpoint) */
+.panel__fullsize-btn {
+  display: none;
+  position: absolute;
+  right: var(--sp-md);
+  top: 50%;
+  transform: translateY(-50%);
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  border-radius: 8px;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 11;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.panel__fullsize-btn:hover { border-color: var(--accent-blue); color: var(--accent-blue); }
+.panel__fullsize-icon { display: block; }
+.panel__fullsize-icon--collapse { display: none; }
+.app.is-panel-fullsize .panel__fullsize-icon--expand { display: none; }
+.app.is-panel-fullsize .panel__fullsize-icon--collapse { display: block; }
+
+/* Smoothly animate the map-row collapse/expand when toggling full-size */
+.app { transition: grid-template-rows 0.28s ease; }
+
 /* ── Tablet / small laptop ── */
 @media (max-width: 860px) {
   .app {
     grid-template-columns: 1fr;
-    /* Map on top (55vh), panel below — the bottom panel scrolls
-       independently, so users can pan the map without losing context. */
-    grid-template-rows: auto 55vh 1fr;
+    /* Map on top (defaults to 55vh but user can drag the panel handle to
+       resize), panel below — the bottom panel scrolls independently. */
+    grid-template-rows: auto var(--map-h, 55vh) 1fr;
   }
 
   .panel {
     border-left: none;
     border-top: 1px solid var(--border-subtle);
+    position: relative;
+  }
+
+  /* Mobile: convert the handle from a left-edge vertical strip into a
+     top-edge horizontal bar. Overrides the desktop positioning above. */
+  .panel__drag-handle {
+    position: relative;
+    top: auto;
+    left: auto;
+    width: auto;
+    height: 28px;
+    cursor: ns-resize;
+    background: var(--bg-card);
+    border-bottom: 1px solid var(--border-subtle);
+    flex-shrink: 0;
+    touch-action: none;
+    z-index: 10;
+  }
+  .panel__drag-handle .panel__drag-grip {
+    width: 56px;
+    height: 6px;
+    opacity: 0.55;
+  }
+  .panel__fullsize-btn { display: flex; }
+
+  /* Full-size mode: map collapses to 0, panel fills the viewport below header. */
+  .app.is-panel-fullsize {
+    grid-template-rows: auto 0 1fr;
+  }
+  .app.is-panel-fullsize .map-container { visibility: hidden; }
+  .panel__drag-handle:hover .panel__drag-grip,
+  .panel__drag-handle:active .panel__drag-grip,
+  .panel__drag-handle.is-dragging .panel__drag-grip {
+    opacity: 1;
+    background: var(--accent-blue);
   }
 
   .header__subtitle { display: none; }
@@ -1548,8 +1659,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .header__logo { width: 28px; height: 28px; }
-  .header__logo img { width: 22px !important; height: 22px !important; }
+  .header__logo { width: 34px; height: 34px; }
   .header__right { gap: var(--sp-xs); flex-shrink: 0; }
 
   /* LIVE chip → just the pulsing dot, no text (saves ~34px). */

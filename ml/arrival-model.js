@@ -137,6 +137,10 @@ function predict(conditions) {
   return {
     predictedDelay: parseFloat(predictedDelay.toFixed(1)),
     confidence,
+    // Std-dev across the forest's per-tree predictions — used by the
+    // UI to render Google-style ETA confidence bands ("09:14 ± 3 min").
+    // Floor of 0.4 so tight ensembles still show a visible ± band.
+    stddev: parseFloat(Math.max(0.4, stddev).toFixed(2)),
     factors,
   };
 }

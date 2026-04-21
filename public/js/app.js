@@ -63,6 +63,153 @@
     setupLeaveAdvisor();
     setupThemeToggle();
     setupLiveBuses();
+    setupPanelResizer();
+  }
+
+  /* ─── Panel resizer ────────────────────────────────────────────────
+     Mobile (stacked): drag the handle vertically to resize the map height,
+     writing --map-h on .app. Desktop (side-by-side): drag horizontally to
+     resize the panel width via --panel-w. Persisted to localStorage per
+     axis. Window-level move/up listeners so the drag survives the finger
+     sliding off the 18px grip. */
+  function setupPanelResizer() {
+    const handle = document.getElementById('panelDragHandle');
+    const root = document.getElementById('app');
+    if (!handle || !root) return;
+
+    const KEY_H = 'routeproject.mapH';
+    const KEY_W = 'routeproject.panelW';
+    const savedH = localStorage.getItem(KEY_H);
+    const savedW = localStorage.getItem(KEY_W);
+    if (savedH) root.style.setProperty('--map-h', savedH);
+    if (savedW) root.style.setProperty('--panel-w', savedW);
+
+    let dragging = false;
+    let axis = 'y';
+    let activePointerId = null;
+
+    function isMobile() { return window.matchMedia('(max-width: 860px)').matches; }
+
+    // ── Full-size toggle ─────────────────────────────────────────────
+    const fullBtn = document.getElementById('panelFullsizeBtn');
+    if (fullBtn) {
+      fullBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        root.classList.toggle('is-panel-fullsize');
+        if (window.MapController && window.MapController.invalidateSize) {
+          setTimeout(() => window.MapController.invalidateSize(), 300);
+        }
+      });
+      // Prevent drag-start when tapping the button.
+      fullBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
+      fullBtn.addEventListener('touchstart', (e) => e.stopPropagation(), { passive: true });
+      fullBtn.addEventListener('mousedown', (e) => e.stopPropagation());
+    }
+
+    function applyMove(clientX, clientY) {
+      if (!dragging) return;
+      if (axis === 'y') {
+        const header = document.querySelector('.header');
+        const headerH = header ? header.getBoundingClientRect().bottom : 0;
+        const minH = 120;
+        const maxH = window.innerHeight - headerH - 140;
+        const mapH = Math.max(minH, Math.min(maxH, clientY - headerH));
+        root.style.setProperty('--map-h', mapH + 'px');
+      } else {
+        const minW = 280;
+        const maxW = Math.max(minW + 40, window.innerWidth - 240);
+        const panelW = Math.max(minW, Math.min(maxW, window.innerWidth - clientX));
+        root.style.setProperty('--panel-w', panelW + 'px');
+      }
+      if (window.MapController && window.MapController.invalidateSize) {
+        window.MapController.invalidateSize();
+      }
+    }
+
+    function onPointerMove(e) { applyMove(e.clientX, e.clientY); }
+    function onTouchMove(e) {
+      if (!dragging || !e.touches || !e.touches[0]) return;
+      applyMove(e.touches[0].clientX, e.touches[0].clientY);
+      e.preventDefault();
+    }
+
+    function end() {
+      if (!dragging) return;
+      dragging = false;
+      handle.classList.remove('is-dragging');
+      document.body.classList.remove('is-resizing');
+      if (activePointerId != null && handle.hasPointerCapture && handle.hasPointerCapture(activePointerId)) {
+        try { handle.releasePointerCapture(activePointerId); } catch (_) {}
+      }
+      activePointerId = null;
+      handle.removeEventListener('pointermove', onPointerMove);
+      handle.removeEventListener('pointerup', end);
+      handle.removeEventListener('pointercancel', end);
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', end);
+      window.removeEventListener('pointercancel', end);
+      handle.removeEventListener('touchmove', onTouchMove);
+      window.removeEventListener('touchmove', onTouchMove);
+      window.removeEventListener('touchend', end);
+      window.removeEventListener('touchcancel', end);
+      window.removeEventListener('mousemove', onPointerMove);
+      window.removeEventListener('mouseup', end);
+      const cur = axis === 'y'
+        ? getComputedStyle(root).getPropertyValue('--map-h').trim()
+        : getComputedStyle(root).getPropertyValue('--panel-w').trim();
+      if (cur) localStorage.setItem(axis === 'y' ? KEY_H : KEY_W, cur);
+      if (window.MapController && window.MapController.invalidateSize) {
+        window.MapController.invalidateSize();
+      }
+    }
+
+    function start(clientX, clientY, e) {
+      dragging = true;
+      axis = isMobile() ? 'y' : 'x';
+      handle.classList.add('is-dragging');
+      document.body.classList.add('is-resizing');
+      applyMove(clientX, clientY);
+      if (e && e.cancelable) e.preventDefault();
+    }
+
+    // Pointer events — capture routes all move/up to the handle itself,
+    // which is more reliable than window listeners in touch emulation.
+    handle.addEventListener('pointerdown', (e) => {
+      if (dragging) return;
+      activePointerId = e.pointerId;
+      try { handle.setPointerCapture(e.pointerId); } catch (_) {}
+      start(e.clientX, e.clientY, e);
+      handle.addEventListener('pointermove', onPointerMove);
+      handle.addEventListener('pointerup', end);
+      handle.addEventListener('pointercancel', end);
+      // Safety net on window too — some WebKit builds drop pointerup on capture release.
+      window.addEventListener('pointerup', end);
+      window.addEventListener('pointercancel', end);
+    });
+
+    // Touch fallback — listen on both handle AND window so neither a
+    // DevTools quirk nor a finger sliding off the grip breaks the drag.
+    handle.addEventListener('touchstart', (e) => {
+      if (dragging) return;
+      const t = e.touches[0];
+      if (!t) return;
+      start(t.clientX, t.clientY, e);
+      handle.addEventListener('touchmove', onTouchMove, { passive: false });
+      window.addEventListener('touchmove', onTouchMove, { passive: false });
+      window.addEventListener('touchend', end);
+      window.addEventListener('touchcancel', end);
+    }, { passive: false });
+
+    // Mouse fallback (very old browsers).
+    handle.addEventListener('mousedown', (e) => {
+      if (dragging) return;
+      start(e.clientX, e.clientY, e);
+      window.addEventListener('mousemove', onPointerMove);
+      window.addEventListener('mouseup', end);
+    });
+
+    // Keep axis choice correct if the viewport crosses the breakpoint.
+    window.addEventListener('resize', () => { if (!dragging) axis = isMobile() ? 'y' : 'x'; });
   }
 
   /* ─── Live bus polling ──────────────────────────────────────────────
@@ -222,7 +369,7 @@
       try {
         const advice = await DataService.getAdvice(stopId);
         if (selectedStopId !== stopId) return;
-        UI.renderAdvice(advice);
+        UI.renderAdvice(advice, stopId);
         if (advice.crowd) {
           UI.renderCrowd(advice.crowd);
         }
@@ -329,6 +476,17 @@
       switchMode(btn.dataset.mode);
     });
 
+    // Collapse/expand — keeps the planner out of the way so the crowd card
+    // under it stays visible by default.
+    const toggle = document.getElementById('leaveCollapseToggle');
+    const card = document.getElementById('leaveAdvisorCard');
+    if (toggle && card) {
+      toggle.addEventListener('click', () => {
+        const isCollapsed = card.classList.toggle('is-collapsed');
+        toggle.setAttribute('aria-expanded', String(!isCollapsed));
+      });
+    }
+
     function triggerPlanFetch() {
       if (!selectedStopId) return;
       const isoLocal = planTime.value;
@@ -403,7 +561,7 @@
         if (isSivas) {
           try {
             const advice = await DataService.getAdvice(selId);
-            UI.renderAdvice(advice);
+            UI.renderAdvice(advice, selId);
             if (advice.crowd) UI.renderCrowd(advice.crowd);
             lastAdviceData = advice;
             UI.renderLeaveAdvisor(advice, leaveWalkMin);

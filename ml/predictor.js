@@ -474,6 +474,10 @@ async function predictArrivals(stop, routes, pool) {
       delayMin: parseFloat(delayMin.toFixed(1)),
       status,
       confidence: prediction.confidence,
+      // Forest-disagreement uncertainty expressed as a ± minutes band.
+      // 1.28·σ covers ~80% of the tree-prediction distribution (normal-
+      // approx), mirroring the confidence level we report alongside.
+      etaBandMin: Math.max(1, Math.round(prediction.stddev * 1.28)),
       vehicleId,
       occupancy: occupancyLevel,
       factors: prediction.factors,

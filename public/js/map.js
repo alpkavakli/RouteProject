@@ -203,11 +203,16 @@ const MapController = (() => {
           allCoords.push(...coords);
         }
       } else if (leg.from && leg.to) {
-        // Transfer: dashed line between transfer stops
-        const fromPc = (journeyData.pathCoords || []).find(p => p.id === leg.from.id);
-        const toPc = (journeyData.pathCoords || []).find(p => p.id === leg.to.id);
-        if (fromPc && toPc) {
-          const coords = [[fromPc.lat, fromPc.lng], [toPc.lat, toPc.lng]];
+        // Transfer: prefer OSRM-routed walk geometry, fallback to straight line
+        let coords = null;
+        if (Array.isArray(leg.coords) && leg.coords.length >= 2) {
+          coords = leg.coords;
+        } else {
+          const fromPc = (journeyData.pathCoords || []).find(p => p.id === leg.from.id);
+          const toPc = (journeyData.pathCoords || []).find(p => p.id === leg.to.id);
+          if (fromPc && toPc) coords = [[fromPc.lat, fromPc.lng], [toPc.lat, toPc.lng]];
+        }
+        if (coords) {
           const line = L.polyline(coords, {
             color: '#f59e0b',
             weight: 4,
@@ -389,5 +394,9 @@ const MapController = (() => {
     liveBusMarkers = {};
   }
 
-  return { init, setCities, renderStops, selectStop, flyToCity, drawRoutes, getSelectedStopId, highlightJourney, clearJourneyHighlight, showCascade, clearCascade, setTheme, renderLiveBuses, clearLiveBuses };
+  function invalidateSize() {
+    if (map) map.invalidateSize();
+  }
+
+  return { init, setCities, renderStops, selectStop, flyToCity, drawRoutes, getSelectedStopId, highlightJourney, clearJourneyHighlight, showCascade, clearCascade, setTheme, renderLiveBuses, clearLiveBuses, invalidateSize };
 })();

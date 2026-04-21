@@ -21,6 +21,57 @@ function haversineDistance(lat1, lng1, lat2, lng2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+// ─── OSRM Walking Route ────────────────────────────────────────────────
+// Hits the public OSRM demo ('foot' profile) to get real walking distance,
+// duration, and path geometry between two stops. Results are cached by
+// rounded coordinate pair so repeated trip plans don't re-hammer the API.
+// On timeout or failure we silently fall back to haversine — the journey
+// still plans, it just draws a straight line.
+const OSRM_BASE = process.env.OSRM_URL || 'https://router.project-osrm.org';
+const OSRM_TIMEOUT_MS = 1500;
+const OSRM_CACHE = new Map();
+const OSRM_CACHE_MAX = 500;
+
+function osrmCacheKey(a, b) {
+  const r = n => n.toFixed(5);
+  return `${r(a.lat)},${r(a.lng)}|${r(b.lat)},${r(b.lng)}`;
+}
+
+async function fetchOsrmWalk(a, b) {
+  const key = osrmCacheKey(a, b);
+  if (OSRM_CACHE.has(key)) return OSRM_CACHE.get(key);
+
+  const url = `${OSRM_BASE}/route/v1/foot/${a.lng},${a.lat};${b.lng},${b.lat}?overview=full&geometries=geojson`;
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), OSRM_TIMEOUT_MS);
+    const res = await fetch(url, { signal: ctrl.signal });
+    clearTimeout(timer);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const route = (data.routes || [])[0];
+    if (!route) return null;
+    const coords = (route.geometry?.coordinates || []).map(([lng, lat]) => [lat, lng]);
+    // OSRM demo uses car-profile routing even for 'foot' — its duration comes
+    // back at car speed (~30 km/h), which produces absurd "2 min" walks for
+    // 2 km. Trust the distance (real pedestrian path) but recompute duration
+    // from our walking-speed constant.
+    const distM = Math.round(route.distance);
+    const out = {
+      distM,
+      transferMin: Math.max(1, Math.ceil(distM / WALK_SPEED_M_MIN)),
+      coords,
+    };
+    if (OSRM_CACHE.size >= OSRM_CACHE_MAX) {
+      OSRM_CACHE.delete(OSRM_CACHE.keys().next().value);
+    }
+    OSRM_CACHE.set(key, out);
+    return out;
+  } catch {
+    return null;
+  }
+}
+
 // ─── Graph Builder ──────────────────────────────────────────────────────
 
 function buildTransitGraph(allRoutes, allStops) {
@@ -44,13 +95,13 @@ function buildTransitGraph(allRoutes, allStops) {
     }
   }
 
-  // 2) Walking transfer edges — only between stops within NATURAL_TRANSFER_M
+  // 2) Walking transfer edges — between any stops within NATURAL_TRANSFER_M.
+  // Same-line pairs are included so riders can walk back when the bus only
+  // runs one direction (routes are one-way by data design). Dijkstra still
+  // prefers bus edges for forward travel thanks to TRANSFER_PENALTY.
   for (let i = 0; i < allStops.length; i++) {
     for (let j = i + 1; j < allStops.length; j++) {
       const a = allStops[i], b = allStops[j];
-      const aLine = (a.routes || [])[0];
-      const bLine = (b.routes || [])[0];
-      if (aLine && bLine && aLine === bLine) continue;
 
       const dist = haversineDistance(a.lat, a.lng, b.lat, b.lng);
       if (dist > NATURAL_TRANSFER_M) continue;
@@ -210,6 +261,40 @@ function buildForcedTransferPath(fromStop, toStop, allRoutes, allStops) {
   return null;
 }
 
+// ─── Direct-Transfer Fallback (same-line reverse or isolated pairs) ─────
+// When Dijkstra AND forced-transfer both fail (e.g., rider wants to go
+// backwards on a one-way line that's >2km — too far for a natural walk
+// transfer, and the two stops don't share a line with any other route),
+// build a single walk-or-dolmus leg straight from A to B. A 3km dolmus
+// beats telling the rider "no route found."
+
+function buildDirectTransferPath(fromStop, toStop) {
+  const distM = Math.round(haversineDistance(fromStop.lat, fromStop.lng, toStop.lat, toStop.lng));
+  let transferMin, mode;
+  if (distM <= 1000) {
+    mode = 'walk';
+    transferMin = Math.ceil(distM / WALK_SPEED_M_MIN);
+  } else {
+    mode = 'dolmus';
+    transferMin = Math.ceil(distM / DOLMUS_SPEED_M_MIN) + 3;
+  }
+  return {
+    steps: [
+      { stopId: fromStop.id, edge: null },
+      {
+        stopId: toStop.id,
+        edge: {
+          to: toStop.id,
+          weight: transferMin + TRANSFER_PENALTY,
+          type: mode,
+          distM,
+          transferMin,
+        },
+      },
+    ],
+  };
+}
+
 // ─── Path → Legs ────────────────────────────────────────────────────────
 
 function pathToLegs(steps, stopMap) {
@@ -265,9 +350,15 @@ async function planJourney(fromStop, toStop, arrivals, allRoutes, pool, allStops
   // Try Dijkstra first (natural walking transfers)
   let result = dijkstra(graph, fromStop.id, toStop.id);
 
-  // Fallback: forced transfer for far-apart lines
+  // Fallback 1: forced transfer for far-apart lines
   if (!result) {
     result = buildForcedTransferPath(fromStop, toStop, allRoutes, allStops);
+  }
+
+  // Fallback 2: direct walk/dolmus when no bus path exists at all (e.g.
+  // reverse direction on a one-way line with no connecting routes).
+  if (!result) {
+    result = buildDirectTransferPath(fromStop, toStop);
   }
 
   if (!result) {
@@ -278,6 +369,29 @@ async function planJourney(fromStop, toStop, arrivals, allRoutes, pool, allStops
   if (legs.length === 0) {
     return emptyResult(fromStop, toStop, 'Route could not be built.');
   }
+
+  // Enrich walk legs with OSRM-routed geometry/duration.
+  // Runs all OSRM calls in parallel; any that time out keep their
+  // haversine-based distM/transferMin unchanged.
+  const walkFetches = legs
+    .map((leg, idx) => ({ leg, idx }))
+    .filter(({ leg }) => leg.type === 'walk' && leg.from && leg.to)
+    .map(async ({ leg }) => {
+      const a = stopMap[leg.from.id];
+      const b = stopMap[leg.to.id];
+      if (!a || !b) return;
+      if (haversineDistance(a.lat, a.lng, b.lat, b.lng) < 50) return;
+      const routed = await fetchOsrmWalk(a, b);
+      if (!routed) return;
+      leg.distM = routed.distM;
+      // Always recompute walk duration from the real pedestrian distance.
+      // Belt-and-braces against stale cache entries from before the OSRM
+      // duration-fix and any future regression in fetchOsrmWalk.
+      leg.transferMin = Math.max(1, Math.ceil(routed.distM / WALK_SPEED_M_MIN));
+      leg.coords = routed.coords;
+      leg.routed = true;
+    });
+  await Promise.all(walkFetches);
 
   // Enrich first bus leg with ML-predicted wait time
   const firstBusLeg = legs.find(l => l.type === 'bus');
@@ -346,6 +460,20 @@ async function planJourney(fromStop, toStop, arrivals, allRoutes, pool, allStops
 function buildRecommendation({ totalMin, waitMin, legs, serviceEnded, hasTransfer }) {
   if (serviceEnded) {
     return { text: 'No service right now', icon: '🌙', priority: 'info' };
+  }
+  // Walk/dolmus-only journey — no bus to "run" to. Usually happens when
+  // the destination is on a one-way line with no connecting route back.
+  const hasBus = legs.some(l => l.type === 'bus');
+  if (!hasBus) {
+    const walkLeg = legs.find(l => l.type === 'walk');
+    const dolmusLeg = legs.find(l => l.type === 'dolmus');
+    if (dolmusLeg) {
+      const km = (dolmusLeg.distM / 1000).toFixed(1);
+      return { text: `No direct bus — ${km}km minibus/taxi (${totalMin} min)`, icon: '🚐', priority: 'info' };
+    }
+    if (walkLeg) {
+      return { text: `Walking only — no bus on this route (${totalMin} min)`, icon: '🚶', priority: 'info' };
+    }
   }
   if (waitMin <= 2) {
     return { text: `Run! Arrive in ${totalMin} min`, icon: '🏃', priority: 'urgent' };

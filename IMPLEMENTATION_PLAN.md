@@ -4,6 +4,25 @@ Working scratchpad for the current in-flight / queued features. Ordered by prior
 
 ---
 
+## Recently Shipped
+
+### ETA Confidence Bands  *(DONE 2026-04-20)*
+Random Forest uncertainty surfaced as a Google-Maps-style `± X min · Y%` band under every countdown.
+- `ml/arrival-model.js` — `predict()` returns `stddev` = spread across the 50 tree predictions, floored at 0.4 so tight ensembles still show a visible band.
+- `ml/predictor.js` — arrival output includes `etaBandMin = max(1, round(stddev × 1.28))` (1.28σ ≈ 80% CI under near-normal residuals).
+- `public/js/ui.js` — renders secondary line under `.advice-card__countdown` with hover tooltip "Random-forest tree disagreement — higher spread means less certain."
+- `public/css/advice.css` — `.advice-card__eta-band` styling (10.5px, muted, tabular-nums).
+
+### Multi-Modal Routing with OSRM  *(DONE 2026-04-20)*
+Walk legs in the journey planner now use real pedestrian routing instead of haversine + flat 5 km/h.
+- `ml/journey.js` — `fetchOsrmWalk(a, b)` calls `router.project-osrm.org/route/v1/foot/...` with 1.5s `AbortController` timeout, 500-entry LRU cache keyed on rounded coords, silent fallback to existing haversine values on timeout/error.
+- `planJourney()` — parallel `Promise.all` over all walk legs; on success replaces `distM` / `transferMin` and attaches polyline `coords` + `routed: true` flag. Skips OSRM for sub-50m walks (not worth the round-trip).
+- `public/js/map.js` — `highlightJourney()` prefers `leg.coords` (routed GeoJSON) over straight-line between transfer stops.
+- `public/js/ui.js` — walk-leg label format changed to `Walk 180m (3 min)` to match Google-style stepper.
+- Env override: `OSRM_URL` for self-hosted deployments.
+
+---
+
 ## 1. Bus #3 in Walk Advisor  *(in progress — small fix)*
 
 Current leave-by advisor only surfaces bus #1 + (synthesized) bus #2 from `minutesToNextBus`. If user's walk time exceeds bus #2's arrival, the card falls through to "Missed · Too late" even though bus #3 is already in the predictor's candidate window.

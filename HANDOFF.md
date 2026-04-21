@@ -31,21 +31,24 @@ If port 3306 conflict: `docker stop vak-vgs-db-1` (user's other project holds 33
 
 ---
 
-## CURRENT STATE (2026-04-16, evening update)
+## CURRENT STATE (2026-04-20, graded checkpoint day)
 
 ### What's DONE and working:
-1. **ML models** — RF Regressor (arrival delay, MAE 2.02min), RF Classifier (5-class crowd, 100% acc)
+1. **ML models** — RF Regressor (arrival delay, MAE ~1.85min), RF Classifier (5-class crowd, 100% acc)
 2. **Smart Advisor** (`ml/advisor.js`) — stress scoring, seat turnover, 7-priority recommendation chips
 3. **Night service detection** — SERVICE_GAP_MIN=180, serviceEnded flag, moon badge, bestOption=-1
 4. **Test suite** — 53 tests: unit (predictor + advisor helpers with BVA/EP) + live integration
-5. **UX polish** — model info polls until trained, service-ended badge, run-badge suppression
+5. **UX polish** — model info polls until trained, service-ended badge, run-badge suppression, dark mode w/ theme toggle
 6. **Bus time bug fix** — `loadAllSchedules()` now uses `hackathon_trips` (352/day/line) as primary source, not sparse `hackathon_arrivals` (7/day/stop)
 7. **Journey Planner — FULL STACK COMPLETE:**
-   - Backend: `GET /api/journey?from=X&to=Y` — direct + transfer journeys
-   - Transfer support: walks <1km, dolmus/taxi for longer distances
-   - Frontend: destination search, journey cards (direct + transfer layouts), map highlighting
+   - Backend: `GET /api/journey?from=X&to=Y` — Dijkstra over bus edges + walking transfers, forced-transfer fallback for far-apart lines (dolmus leg)
+   - **OSRM walk routing (2026-04-20):** public `router.project-osrm.org/foot` server, 1.5s timeout, 500-entry LRU cache, haversine fallback on failure. Walk legs carry `routed: true` + polyline `coords` for map rendering.
+   - Frontend: destination search, leg-by-leg stepper (`Walk 180m (3 min) → L03 → …`), OSRM geometry drawn as dashed orange polyline
    - Auto-refresh works in both arrivals and journey mode
-   - All 5 Sivas lines × any combination works (same-line direct, cross-line transfer)
+8. **Delay Cascade** — `/api/cascade?routeId=X&fromStopId=Y`, green→red map gradient + per-stop predicted delay summary card. Module: `ml/cascade.js`. Best demo: L01 (delay grows 1→15 min across 13 stops).
+9. **Live Bus Positions** — `/api/live-buses`, active trips interpolated along stop sequence with ML-predicted delay applied. 4s polling, rAF-tweened markers with bus-icon divIcons. No GPS; schedule + ML.
+10. **"When Should I Leave?" advisor** — frontend-only, walk-time pills (1/3/5/10 + custom), renders 3 leave-by options with crowd tags.
+11. **ETA Confidence Bands (2026-04-20)** — std-dev across the 50 RF trees × 1.28 → `± X min · Y%` under every countdown. `etaBandMin` in `/advice` payload; styling in `public/css/advice.css`.
 
 #### API response shape (`GET /api/journey?from=STP-L01-04&to=STP-L01-12`):
 ```json
@@ -78,18 +81,16 @@ If port 3306 conflict: `docker stop vak-vgs-db-1` (user's other project holds 33
 
 ---
 
-## What's NEXT After Journey Planner Frontend
+## What's NEXT
 
-### Feature #2: Delay Cascade Visualization
-- Model delay propagation using `cumulative_delay_min` from hackathon_arrivals
-- Route line on map: green→red gradient showing predicted delay at each stop
-- New endpoint: `GET /api/routes/:id/delay-cascade`
-- See `memory/project_differentiation_ideas.md` for details on all 5 features
+### Backlog (from `memory/project_differentiation_ideas.md`)
+- **Historical Pattern Insights** — "L03 always late on rainy days", "Tuesday 17:00 is worst rush hour, not Monday" — SQL aggregates + card UI.
+- **Boarding Strategy / Comfort Optimization** — predict seat availability per stop, recommend fastest *seated* journey.
+- **"Schedule a ride" planner** — datetime picker + `predictAtTime()` for arrive-by queries (see IMPLEMENTATION_PLAN.md §2).
 
 ### Documentation
-- Update README with Journey Planner
-- Update DOCUMENTATION.md
-- Demo narrative for 04-20 checkpoint
+- DOCUMENTATION.md is stale — still references pre-advice endpoints and doesn't cover journey/cascade/live/ETA-bands. Rewrite needed before final pitch.
+- Demo narrative for 04-22 final pitch.
 
 ---
 
